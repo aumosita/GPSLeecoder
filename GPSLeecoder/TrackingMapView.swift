@@ -10,7 +10,7 @@ struct TrackingMapView: View {
     @State private var showHistory = false
     @State private var fileToShare: URL?
 
-    @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.978), span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005))))
+    @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
 
     var body: some View {
         ZStack(alignment: .bottom) {
