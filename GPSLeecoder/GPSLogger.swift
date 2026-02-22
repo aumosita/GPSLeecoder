@@ -91,6 +91,13 @@ actor GPSLogger {
                 trackState.currentFileURL = url
             }
             isActivelyLogging = true
+
+            // Set background location permission ONCE at start
+            let status = CLLocationManager.authorizationStatus()
+            if status == .authorizedAlways {
+                locationManager.allowsBackgroundLocationUpdates = true
+            }
+
             startFlushTimer()
 
             if isIntermittentMode {
@@ -108,6 +115,7 @@ actor GPSLogger {
         stopFlushTimer()
         stopIntermittentTimer()
         stopLocationUpdates()
+        locationManager.allowsBackgroundLocationUpdates = false
         do { try gpx.close() } catch { print("Failed to close GPX: \(error)") }
         let url = self.currentFileURL
         await MainActor.run {
@@ -120,8 +128,6 @@ actor GPSLogger {
 
     private func startLocationUpdates() {
         let status = CLLocationManager.authorizationStatus()
-        locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
-
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
             locationManager.startUpdatingLocation()
@@ -134,7 +140,6 @@ actor GPSLogger {
 
     private func stopLocationUpdates() {
         locationManager.stopUpdatingLocation()
-        locationManager.allowsBackgroundLocationUpdates = false
     }
 
     // MARK: - Intermittent GPS mode
@@ -161,8 +166,6 @@ actor GPSLogger {
 
     private func requestSingleFix() {
         waitingForFix = true
-        let status = CLLocationManager.authorizationStatus()
-        locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
         locationManager.startUpdatingLocation()
     }
 
@@ -187,11 +190,8 @@ actor GPSLogger {
     // MARK: - Handlers
 
     private func handleAuthChange(status: CLAuthorizationStatus) {
-        // Only allow background updates if we are actively logging AND have Always authorization.
-        // Setting this when not logging causes a CoreLocation assertion crash.
-        if isActivelyLogging {
-            locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
-        }
+        // Background updates are set once in startLogging/stopLogging.
+        // No action needed here to avoid CoreLocation assertion crashes.
     }
 
     private func handleLocations(_ locations: [CLLocation]) async {
