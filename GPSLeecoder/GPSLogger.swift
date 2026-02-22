@@ -236,6 +236,7 @@ actor GPSLogger {
 
     private func handleHeading(_ heading: CLHeading) {
         let h = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+        lastTrueHeading = h
         Task { @MainActor in
             trackState.currentHeading = h
         }
@@ -282,7 +283,7 @@ actor GPSLogger {
                 continue
             }
 
-            do { try gpx.append(location: loc) } catch { print("Append error: \(error)") }
+            do { try gpx.append(location: loc, heading: lastTrueHeading) } catch { print("Append error: \(error)") }
 
             // Compute distance
             if let prev = lastLocation {
@@ -322,4 +323,5 @@ actor GPSLogger {
 
     private var lastAcceptedSpeed: Double = 0
     private var lastAcceptedAltitude: Double = 0
+    private var lastTrueHeading: Double = -1
 }

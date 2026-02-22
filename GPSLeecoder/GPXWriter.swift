@@ -48,9 +48,9 @@ final class GPXWriter: @unchecked Sendable {
     // MARK: - Writing
 
     /// Appends a single track point to the open GPX file.
-    func append(location: CLLocation) throws {
+    func append(location: CLLocation, heading: Double? = nil) throws {
         guard let handle = fileHandle else { throw NSError(domain: "GPXWriter", code: 2, userInfo: [NSLocalizedDescriptionKey: "File not open"]) }
-        let point = Self.gpxTrackPoint(for: location)
+        let point = Self.gpxTrackPoint(for: location, heading: heading)
         try handle.write(contentsOf: Data(point.utf8))
         try handle.write(contentsOf: Data("\n".utf8))
     }
@@ -110,7 +110,7 @@ private extension GPXWriter {
         """.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func gpxTrackPoint(for location: CLLocation) -> String {
+    static func gpxTrackPoint(for location: CLLocation, heading: Double? = nil) -> String {
         let lat = location.coordinate.latitude
         let lon = location.coordinate.longitude
         let ele = location.verticalAccuracy >= 0 ? location.altitude : 0
@@ -122,16 +122,16 @@ private extension GPXWriter {
         xml += "    <ele>\(String(format: "%.1f", ele))</ele>\n"
         xml += "    <time>\(time)</time>\n"
 
-        // Horizontal accuracy → hdop (approximate: hdop ≈ accuracy / 5)
+        // Horizontal accuracy
         if location.horizontalAccuracy >= 0 {
             xml += "    <hdop>\(String(format: "%.1f", location.horizontalAccuracy))</hdop>\n"
         }
-        // Vertical accuracy → vdop
+        // Vertical accuracy
         if location.verticalAccuracy >= 0 {
             xml += "    <vdop>\(String(format: "%.1f", location.verticalAccuracy))</vdop>\n"
         }
 
-        // Extensions: speed, course, accuracies
+        // Extensions: speed, course, accuracies, heading, ellipsoidalAltitude, source
         var extLines: [String] = []
         if location.speed >= 0 {
             extLines.append("        <gpxleecoder:speed>\(String(format: "%.2f", location.speed))</gpxleecoder:speed>")
@@ -144,6 +144,18 @@ private extension GPXWriter {
         }
         if location.courseAccuracy >= 0 {
             extLines.append("        <gpxleecoder:courseAccuracy>\(String(format: "%.1f", location.courseAccuracy))</gpxleecoder:courseAccuracy>")
+        }
+        // True heading from compass
+        if let h = heading, h >= 0 {
+            extLines.append("        <gpxleecoder:trueHeading>\(String(format: "%.1f", h))</gpxleecoder:trueHeading>")
+        }
+        // Ellipsoidal altitude (WGS84)
+        extLines.append("        <gpxleecoder:ellipsoidalAltitude>\(String(format: "%.1f", location.ellipsoidalAltitude))</gpxleecoder:ellipsoidalAltitude>")
+        // Location source info
+        if let source = location.sourceInformation {
+            let isSimulated = source.isSimulatedBySoftware
+            let isProduced = source.isProducedByAccessory
+            extLines.append("        <gpxleecoder:source simulated=\"\(isSimulated)\" accessory=\"\(isProduced)\"/>")
         }
 
         if !extLines.isEmpty {
