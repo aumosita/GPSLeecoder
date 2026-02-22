@@ -7,7 +7,7 @@ struct StartLoggingIntent: AppIntent {
 
     static var openAppWhenRun: Bool = false
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let status = CLLocationManager.authorizationStatus()
 
         switch status {
@@ -16,7 +16,6 @@ struct StartLoggingIntent: AppIntent {
         case .notDetermined:
             return .result(value: String(localized: "shortcut_error_not_determined"))
         default:
-            // Use the app's current settings from UserDefaults
             let flush = UserDefaults.standard.integer(forKey: "flushIntervalMinutes")
             let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
             await GPSLogger.shared.startLogging(
@@ -34,7 +33,7 @@ struct StopLoggingIntent: AppIntent {
 
     static var openAppWhenRun: Bool = false
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
         await GPSLogger.shared.stopLogging()
         return .result(value: String(localized: "shortcut_result_ok"))
     }
