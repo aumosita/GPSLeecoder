@@ -11,6 +11,14 @@ final class TrackState: ObservableObject {
 actor GPSLogger {
     static let shared = GPSLogger()
 
+    /// Runtime check: does the built Info.plist actually contain UIBackgroundModes = [location]?
+    nonisolated static var hasBackgroundLocationCapability: Bool {
+        guard let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] else {
+            return false
+        }
+        return modes.contains("location")
+    }
+
     private let locationManager = CLLocationManager()
     private let delegate = LocationDelegate()
     private let gpx = GPXWriter()
@@ -92,9 +100,10 @@ actor GPSLogger {
             }
             isActivelyLogging = true
 
-            // Set background location permission ONCE at start
+            // Set background location permission ONCE at start — only if the app actually
+            // has UIBackgroundModes=location in Info.plist (prevents CoreLocation assertion crash)
             let status = CLLocationManager.authorizationStatus()
-            if status == .authorizedAlways {
+            if status == .authorizedAlways, Self.hasBackgroundLocationCapability {
                 locationManager.allowsBackgroundLocationUpdates = true
             }
 
