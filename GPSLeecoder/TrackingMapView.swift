@@ -13,10 +13,18 @@ struct TrackingMapView: View {
     @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
 
     var body: some View {
-        Map(position: $cameraPosition) {
-            if state.coordinates.count > 1 {
-                MapPolyline(coordinates: state.coordinates)
-                    .stroke(.blue, lineWidth: 3)
+        ZStack(alignment: .bottom) {
+            Map(position: $cameraPosition) {
+                if state.coordinates.count > 1 {
+                    MapPolyline(coordinates: state.coordinates)
+                        .stroke(.blue, lineWidth: 3)
+                }
+            }
+
+            if state.isLogging {
+                LiveStatsBar(speed: state.currentSpeed,
+                             altitude: state.currentAltitude,
+                             distance: state.totalDistance)
             }
         }
         .onAppear {
@@ -131,5 +139,65 @@ private struct RecordingIndicator: View {
                 .font(.headline)
         }
         .onAppear { isPulsing = true }
+    }
+}
+
+// MARK: - Live stats overlay
+private struct LiveStatsBar: View {
+    let speed: Double      // m/s
+    let altitude: Double   // m
+    let distance: Double   // m
+
+    var body: some View {
+        HStack(spacing: 0) {
+            statItem(icon: "speedometer", value: speedText, label: "km/h")
+            Divider().frame(height: 30)
+            statItem(icon: "mountain.2", value: altitudeText, label: "m")
+            Divider().frame(height: 30)
+            statItem(icon: "point.topleft.down.to.point.bottomright.curvepath", value: distanceText, label: distanceUnit)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
+    }
+
+    private func statItem(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var speedText: String {
+        let kmh = max(0, speed) * 3.6
+        return String(format: "%.1f", kmh)
+    }
+
+    private var altitudeText: String {
+        String(format: "%.0f", altitude)
+    }
+
+    private var distanceText: String {
+        if distance >= 1000 {
+            return String(format: "%.2f", distance / 1000)
+        } else {
+            return String(format: "%.0f", distance)
+        }
+    }
+
+    private var distanceUnit: String {
+        distance >= 1000 ? "km" : "m"
     }
 }

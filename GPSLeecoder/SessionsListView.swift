@@ -48,10 +48,13 @@ struct SessionsListView: View {
                 }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button(role: .destructive) {
-                    fileToDelete = url
-                } label: {
-                    Label(String(localized: "swipe_delete"), systemImage: "trash")
+                // Only allow deletion of tracks that have been shared/exported
+                if isExported(url) {
+                    Button(role: .destructive) {
+                        fileToDelete = url
+                    } label: {
+                        Label(String(localized: "swipe_delete"), systemImage: "trash")
+                    }
                 }
                 Button {
                     markAsExported(url)

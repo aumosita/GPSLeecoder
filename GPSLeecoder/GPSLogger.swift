@@ -6,6 +6,9 @@ final class TrackState: ObservableObject {
     @Published var coordinates: [CLLocationCoordinate2D] = []
     @Published var isLogging: Bool = false
     @Published var currentFileURL: URL? = nil
+    @Published var currentSpeed: Double = 0        // m/s, negative if invalid
+    @Published var currentAltitude: Double = 0      // meters
+    @Published var totalDistance: Double = 0         // meters
 }
 
 actor GPSLogger {
@@ -37,6 +40,9 @@ actor GPSLogger {
 
     private var distanceFilterMeters: Double = 0  // 0 = no filter
     private var accuracyFilterMeters: Double = 0  // 0 = no filter
+
+    private var lastLocation: CLLocation? = nil
+    private var totalDistance: Double = 0
 
     private(set) var currentFileURL: URL? = nil
 
@@ -111,6 +117,8 @@ actor GPSLogger {
                 trackState.currentFileURL = url
             }
             isActivelyLogging = true
+            lastLocation = nil
+            totalDistance = 0
 
             // Set background location permission ONCE at start — only if the app actually
             // has UIBackgroundModes=location in Info.plist (prevents CoreLocation assertion crash)
@@ -257,6 +265,15 @@ actor GPSLogger {
             }
 
             do { try gpx.append(location: loc) } catch { print("Append error: \(error)") }
+
+            // Compute distance
+            if let prev = lastLocation {
+                totalDistance += loc.distance(from: prev)
+            }
+            lastLocation = loc
+            lastAcceptedSpeed = loc.speed
+            lastAcceptedAltitude = loc.altitude
+
             lastSavedLocationTime = loc.timestamp
             newCoords.append(loc.coordinate)
         }
@@ -269,8 +286,18 @@ actor GPSLogger {
 
         guard !newCoords.isEmpty else { return }
 
+        let speed = lastAcceptedSpeed
+        let alt = lastAcceptedAltitude
+        let dist = self.totalDistance
+
         await MainActor.run {
             trackState.coordinates.append(contentsOf: newCoords)
+            trackState.currentSpeed = speed
+            trackState.currentAltitude = alt
+            trackState.totalDistance = dist
         }
     }
+
+    private var lastAcceptedSpeed: Double = 0
+    private var lastAcceptedAltitude: Double = 0
 }
