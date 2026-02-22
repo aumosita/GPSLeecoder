@@ -4,6 +4,7 @@ import UIKit
 struct SessionsListView: View {
     @State private var files: [URL] = []
     @State private var fileToShare: URL?
+    @State private var fileToDelete: URL?
     @AppStorage("exportedFiles") private var exportedFilesData: Data = Data()
 
     private var exportedFileNames: Set<String> {
@@ -22,34 +23,43 @@ struct SessionsListView: View {
         exportedFileNames.contains(url.lastPathComponent)
     }
 
+    private func deleteFile(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        files.removeAll { $0 == url }
+    }
+
     var body: some View {
         List(files, id: \._id) { url in
             NavigationLink(destination: TrackOverlayView(fileURL: url)) {
-                HStack {
-                    VStack(alignment: .leading) {
-                        HStack(spacing: 6) {
-                            Text(url.deletingPathExtension().lastPathComponent)
-                                .font(.headline)
-                            if isExported(url) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                    .font(.caption)
-                                    .accessibilityLabel(String(localized: "accessibility_exported"))
-                            }
+                VStack(alignment: .leading) {
+                    HStack(spacing: 6) {
+                        Text(url.deletingPathExtension().lastPathComponent)
+                            .font(.headline)
+                        if isExported(url) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.caption)
+                                .accessibilityLabel(String(localized: "accessibility_exported"))
                         }
-                        Text(formattedDate(from: url))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Button {
-                        markAsExported(url)
-                        fileToShare = url
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.borderless)
+                    Text(formattedDate(from: url))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    fileToDelete = url
+                } label: {
+                    Label(String(localized: "swipe_delete"), systemImage: "trash")
+                }
+                Button {
+                    markAsExported(url)
+                    fileToShare = url
+                } label: {
+                    Label(String(localized: "swipe_share"), systemImage: "square.and.arrow.up")
+                }
+                .tint(.blue)
             }
         }
         .navigationTitle(String(localized: "nav_title_history"))
@@ -61,6 +71,24 @@ struct SessionsListView: View {
         )) {
             if let url = fileToShare {
                 ShareSheetView(activityItems: [url])
+            }
+        }
+        .alert(String(localized: "delete_confirm_title"), isPresented: Binding(
+            get: { fileToDelete != nil },
+            set: { if !$0 { fileToDelete = nil } }
+        )) {
+            Button(String(localized: "delete_confirm_cancel"), role: .cancel) {
+                fileToDelete = nil
+            }
+            Button(String(localized: "delete_confirm_delete"), role: .destructive) {
+                if let url = fileToDelete {
+                    deleteFile(url)
+                    fileToDelete = nil
+                }
+            }
+        } message: {
+            if let url = fileToDelete {
+                Text("delete_confirm_message \(url.deletingPathExtension().lastPathComponent)")
             }
         }
     }

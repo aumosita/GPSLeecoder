@@ -5,23 +5,9 @@ struct StartLoggingIntent: AppIntent {
     static var title: LocalizedStringResource = "Start GPS Logging"
     static var description = IntentDescription("Start recording a GPX track.")
 
-    @Parameter(title: "Flush Interval (minutes)")
-    var intervalMinutes: Int?
-
-    @Parameter(title: "Session Name")
-    var sessionName: String?
-
-    @Parameter(title: "Record Interval (seconds)")
-    var recordIntervalSeconds: Int?
-
     static var openAppWhenRun: Bool = false
 
     func perform() async throws -> some IntentResult {
-        let requestedInterval = intervalMinutes ?? UserDefaults.standard.integer(forKey: "flushIntervalMinutes")
-        let sanitizedInterval = max(1, requestedInterval == 0 ? AppConfig.defaultFlushIntervalMinutes : requestedInterval)
-        let requestedRecord = recordIntervalSeconds ?? UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
-        let sanitizedRecord = max(1, requestedRecord == 0 ? 5 : requestedRecord)
-
         let status = CLLocationManager.authorizationStatus()
 
         switch status {
@@ -30,10 +16,12 @@ struct StartLoggingIntent: AppIntent {
         case .notDetermined:
             return .result(value: String(localized: "shortcut_error_not_determined"))
         default:
+            // Use the app's current settings from UserDefaults
+            let flush = UserDefaults.standard.integer(forKey: "flushIntervalMinutes")
+            let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
             await GPSLogger.shared.startLogging(
-                updateInterval: sanitizedInterval,
-                suggestedName: sessionName,
-                recordIntervalSeconds: sanitizedRecord
+                updateInterval: max(1, flush == 0 ? AppConfig.defaultFlushIntervalMinutes : flush),
+                recordIntervalSeconds: max(1, record == 0 ? 5 : record)
             )
             return .result(value: String(localized: "shortcut_result_ok"))
         }
