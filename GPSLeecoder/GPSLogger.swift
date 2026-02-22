@@ -35,6 +35,9 @@ actor GPSLogger {
     private var waitingForFix: Bool = false
     private var isActivelyLogging: Bool = false
 
+    private var distanceFilterMeters: Double = 0  // 0 = no filter
+    private var accuracyFilterMeters: Double = 0  // 0 = no filter
+
     private(set) var currentFileURL: URL? = nil
 
     // Shared UI state (published on main thread)
@@ -83,6 +86,15 @@ actor GPSLogger {
 
         // Determine GPS power mode
         isIntermittentMode = self.recordIntervalSeconds >= AppConfig.intermittentGPSThreshold
+
+        // Read filter settings
+        let distRaw = UserDefaults.standard.integer(forKey: "distanceFilterMeters")
+        distanceFilterMeters = distRaw > 0 ? Double(distRaw) : 0
+        let accRaw = UserDefaults.standard.integer(forKey: "accuracyFilterMeters")
+        accuracyFilterMeters = accRaw > 0 ? Double(accRaw) : 0
+
+        // Apply distance filter to CLLocationManager
+        locationManager.distanceFilter = distanceFilterMeters > 0 ? distanceFilterMeters : kCLDistanceFilterNone
 
         do {
             if saveMode == .daily {
@@ -237,6 +249,11 @@ actor GPSLogger {
                         continue
                     }
                 }
+            }
+
+            // Accuracy filter: drop locations with poor GPS accuracy
+            if accuracyFilterMeters > 0 && loc.horizontalAccuracy > accuracyFilterMeters {
+                continue
             }
 
             do { try gpx.append(location: loc) } catch { print("Append error: \(error)") }

@@ -4,10 +4,8 @@ struct SettingsView: View {
     @AppStorage("flushIntervalMinutes") private var flushIntervalMinutes: Int = AppConfig.defaultFlushIntervalMinutes
     @AppStorage("recordIntervalSeconds") private var recordIntervalSeconds: Int = 5
     @AppStorage("saveMode") private var saveModeRaw: String = SaveMode.session.rawValue
-
-    private var saveMode: SaveMode {
-        get { SaveMode(rawValue: saveModeRaw) ?? .session }
-    }
+    @AppStorage("distanceFilterMeters") private var distanceFilterMeters: Int = 0
+    @AppStorage("accuracyFilterMeters") private var accuracyFilterMeters: Int = 0
 
     var body: some View {
         Form {
@@ -85,6 +83,34 @@ struct SettingsView: View {
                 Text("settings_section_gps_power")
             } footer: {
                 Text("settings_gps_power_note")
+            }
+
+            Section {
+                Stepper(value: $distanceFilterMeters, in: 0...500, step: 5) {
+                    HStack {
+                        Text("settings_distance_filter")
+                        Spacer()
+                        Text(distanceFilterMeters == 0
+                             ? String(localized: "settings_filter_off")
+                             : String(localized: "settings_distance_filter_value \(distanceFilterMeters)"))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Stepper(value: $accuracyFilterMeters, in: 0...500, step: 5) {
+                    HStack {
+                        Text("settings_accuracy_filter")
+                        Spacer()
+                        Text(accuracyFilterMeters == 0
+                             ? String(localized: "settings_filter_off")
+                             : String(localized: "settings_accuracy_filter_value \(accuracyFilterMeters)"))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("settings_section_filters")
+            } footer: {
+                Text("settings_filters_note")
             }
 
             Section(footer: Text("settings_footer")) {
