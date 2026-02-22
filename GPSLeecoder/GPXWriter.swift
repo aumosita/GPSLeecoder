@@ -18,17 +18,21 @@ final class GPXWriter: @unchecked Sendable {
     /// - Parameter suggestedName: Optional suggested base name (without extension). If nil, a timestamped name is used.
     func startNewFile(suggestedName: String? = nil) throws {
         let tracksDir = try Self.tracksDirectory()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmmss"
-        let base = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? suggestedName! : formatter.string(from: Date())
+        let base: String
+        if let name = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            base = name
+        } else {
+            base = Self.sessionDateFormatter.string(from: Date())
+        }
         let url = tracksDir.appendingPathComponent("\(base).gpx")
-        try openFile(at: url, baseName: base, in: tracksDir)
+        try openNewFile(at: url, baseName: base, in: tracksDir)
         currentFileDate = nil
     }
 
     // MARK: - Daily mode
 
-    /// Opens (or keeps open) a GPX file named after the given date, e.g. `2026-02-22.gpx`.
+    /// Opens (or resumes) a GPX file named after the given date, e.g. `2026-02-22.gpx`.
+    /// If the file already exists (from a previous session), it reopens and appends a new track segment.
     func startNewFileForDate(_ date: Date) throws {
         let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month, .day], from: date)
@@ -37,11 +41,21 @@ final class GPXWriter: @unchecked Sendable {
         // Close any previously open file first.
         try close()
         let tracksDir = try Self.tracksDirectory()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let base = formatter.string(from: date)
+        let base = Self.dailyDateFormatter.string(from: date)
         let url = tracksDir.appendingPathComponent("\(base).gpx")
-        try openFile(at: url, baseName: base, in: tracksDir)
+
+        if fileManager.fileExists(atPath: url.path) {
+            // Reopen existing daily file — append a new track segment
+            try reopenExistingFile(at: url)
+        } else {
+            // Create a brand-new file (no -1 suffix for daily mode)
+            fileManager.createFile(atPath: url.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: url)
+            self.fileHandle = handle
+            self.fileURL = url
+            try handle.write(contentsOf: Data(Self.gpxHeader().utf8))
+            try handle.write(contentsOf: Data("\n<trk>\n  <name>Track</name>\n  <trkseg>\n".utf8))
+        }
         currentFileDate = comps
     }
 
@@ -71,8 +85,8 @@ final class GPXWriter: @unchecked Sendable {
 
     // MARK: - Private helpers
 
-    private func openFile(at url: URL, baseName: String, in tracksDir: URL) throws {
-        // If exists, add suffix
+    /// Opens a new file (session mode). Adds a numeric suffix if the file already exists.
+    private func openNewFile(at url: URL, baseName: String, in tracksDir: URL) throws {
         var finalURL = url
         var suffix = 1
         while fileManager.fileExists(atPath: finalURL.path) {
@@ -90,12 +104,62 @@ final class GPXWriter: @unchecked Sendable {
         try handle.write(contentsOf: Data("\n<trk>\n  <name>Track</name>\n  <trkseg>\n".utf8))
     }
 
+    /// Reopens an existing daily GPX file, strips closing tags, and starts a new track segment.
+    private func reopenExistingFile(at url: URL) throws {
+        let handle = try FileHandle(forUpdating: url)
+        let closingTag = "  </trkseg>\n</trk>\n</gpx>\n"
+        let closingTagBytes = closingTag.utf8.count
+
+        // Seek to end and check if file ends with the closing tags
+        let fileSize = try handle.seekToEnd()
+        if fileSize >= closingTagBytes {
+            try handle.seek(toOffset: fileSize - UInt64(closingTagBytes))
+            let tailData = try handle.read(upToCount: closingTagBytes) ?? Data()
+            if String(data: tailData, encoding: .utf8) == closingTag {
+                // Truncate to remove closing tags
+                try handle.truncate(atOffset: fileSize - UInt64(closingTagBytes))
+                try handle.seekToEnd()
+            } else {
+                // Closing tags not found — just seek to end
+                try handle.seekToEnd()
+            }
+        } else {
+            try handle.seekToEnd()
+        }
+
+        // Start a new track segment
+        try handle.write(contentsOf: Data("  </trkseg>\n  <trkseg>\n".utf8))
+
+        self.fileHandle = handle
+        self.fileURL = url
+    }
+
     static func tracksDirectory() throws -> URL {
         let docs = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let tracksDir = docs.appendingPathComponent("Tracks", isDirectory: true)
         try FileManager.default.createDirectory(at: tracksDir, withIntermediateDirectories: true)
         return tracksDir
     }
+
+    // MARK: - Static cached formatters
+
+    private static let sessionDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd_HHmmss"
+        return f
+    }()
+
+    private static let dailyDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 }
 
 private extension GPXWriter {
@@ -114,9 +178,7 @@ private extension GPXWriter {
         let lat = location.coordinate.latitude
         let lon = location.coordinate.longitude
         let ele = location.verticalAccuracy >= 0 ? location.altitude : 0
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let time = iso.string(from: location.timestamp)
+        let time = isoFormatter.string(from: location.timestamp)
 
         var xml = "  <trkpt lat=\"\(lat)\" lon=\"\(lon)\">\n"
         xml += "    <ele>\(String(format: "%.1f", ele))</ele>\n"

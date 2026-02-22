@@ -6,9 +6,15 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 @main
 struct GPSLeecoderApp: App {
+    init() {
+        // Request notification permission for watchdog alerts
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
     var body: some Scene {
         WindowGroup {
             NavigationStack {

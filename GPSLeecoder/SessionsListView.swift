@@ -5,28 +5,6 @@ struct SessionsListView: View {
     @State private var files: [URL] = []
     @State private var fileToShare: URL?
     @State private var fileToDelete: URL?
-    @AppStorage("exportedFiles") private var exportedFilesData: Data = Data()
-
-    private var exportedFileNames: Set<String> {
-        (try? JSONDecoder().decode(Set<String>.self, from: exportedFilesData)) ?? []
-    }
-
-    private func markAsExported(_ url: URL) {
-        var names = exportedFileNames
-        names.insert(url.lastPathComponent)
-        if let data = try? JSONEncoder().encode(names) {
-            exportedFilesData = data
-        }
-    }
-
-    private func isExported(_ url: URL) -> Bool {
-        exportedFileNames.contains(url.lastPathComponent)
-    }
-
-    private func deleteFile(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
-        files.removeAll { $0 == url }
-    }
 
     var body: some View {
         List(files, id: \._id) { url in
@@ -35,7 +13,7 @@ struct SessionsListView: View {
                     HStack(spacing: 6) {
                         Text(url.deletingPathExtension().lastPathComponent)
                             .font(.headline)
-                        if isExported(url) {
+                        if ExportedFilesTracker.isExported(url) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                                 .font(.caption)
@@ -48,8 +26,7 @@ struct SessionsListView: View {
                 }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                // Only allow deletion of tracks that have been shared/exported
-                if isExported(url) {
+                if ExportedFilesTracker.isExported(url) {
                     Button(role: .destructive) {
                         fileToDelete = url
                     } label: {
@@ -57,7 +34,7 @@ struct SessionsListView: View {
                     }
                 }
                 Button {
-                    markAsExported(url)
+                    ExportedFilesTracker.markAsExported(url)
                     fileToShare = url
                 } label: {
                     Label(String(localized: "swipe_share"), systemImage: "square.and.arrow.up")
@@ -96,6 +73,11 @@ struct SessionsListView: View {
         }
     }
 
+    private func deleteFile(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        files.removeAll { $0 == url }
+    }
+
     private func loadFiles() {
         let fm = FileManager.default
         do {
@@ -113,25 +95,18 @@ struct SessionsListView: View {
         }
     }
 
-    private func formattedDate(from url: URL) -> String {
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-        let date = values?.contentModificationDate
+    private static let dateFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateStyle = .medium
         df.timeStyle = .short
-        return date.map { df.string(from: $0) } ?? ""
+        return df
+    }()
+
+    private func formattedDate(from url: URL) -> String {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        let date = values?.contentModificationDate
+        return date.map { Self.dateFormatter.string(from: $0) } ?? ""
     }
-}
-
-// MARK: - UIActivityViewController wrapper
-struct ShareSheetView: UIViewControllerRepresentable {
-    let activityItems: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private extension URL {

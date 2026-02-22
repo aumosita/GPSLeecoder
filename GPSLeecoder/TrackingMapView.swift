@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import CoreLocation
+import Combine
 
 struct TrackingMapView: View {
     @StateObject private var state = GPSLogger.shared.trackState
@@ -60,21 +61,13 @@ struct TrackingMapView: View {
             // Request a one-time location fix to seed initial map position
             Task { await GPSLogger.shared.requestInitialLocation() }
         }
-        .task {
-            // Wait for initial location, then set zoom to ~100m
-            for _ in 0..<20 {
-                try? await Task.sleep(for: .milliseconds(250))
-                if let loc = state.currentLocation {
-                    if !hasSetInitialZoom {
-                        hasSetInitialZoom = true
-                        cameraPosition = .camera(MapCamera(
-                            centerCoordinate: loc,
-                            distance: 500
-                        ))
-                    }
-                    break
-                }
-            }
+        .onReceive(state.$currentLocation.compactMap { $0 }.prefix(1)) { loc in
+            guard !hasSetInitialZoom else { return }
+            hasSetInitialZoom = true
+            cameraPosition = .camera(MapCamera(
+                centerCoordinate: loc,
+                distance: 500
+            ))
         }
         .navigationTitle(state.isLogging ? String(localized: "nav_title_logging") : String(localized: "nav_title_idle"))
         .toolbar {
@@ -126,7 +119,7 @@ struct TrackingMapView: View {
                 if !state.isLogging, let url = state.currentFileURL {
                     Spacer()
                     Button {
-                        markAsExported(url)
+                        ExportedFilesTracker.markAsExported(url)
                         fileToShare = url
                     } label: {
                         Label(String(localized: "button_share_gpx"), systemImage: "square.and.arrow.up")
@@ -150,16 +143,6 @@ struct TrackingMapView: View {
             if let url = fileToShare {
                 ShareSheetView(activityItems: [url])
             }
-        }
-    }
-
-    private func markAsExported(_ url: URL) {
-        let key = "exportedFiles"
-        let data = UserDefaults.standard.data(forKey: key) ?? Data()
-        var names = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
-        names.insert(url.lastPathComponent)
-        if let encoded = try? JSONEncoder().encode(names) {
-            UserDefaults.standard.set(encoded, forKey: key)
         }
     }
 }

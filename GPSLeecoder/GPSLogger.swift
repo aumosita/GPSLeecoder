@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import Combine
+import UserNotifications
 
 final class TrackState: ObservableObject {
     @Published var coordinates: [CLLocationCoordinate2D] = []
@@ -45,6 +46,11 @@ actor GPSLogger {
 
     private var lastLocation: CLLocation? = nil
     private var totalDistance: Double = 0
+    private var lastAcceptedSpeed: Double = 0
+    private var lastAcceptedAltitude: Double = 0
+    private var lastTrueHeading: Double = -1
+
+    private static let watchdogNotificationID = "gpsleecoder.watchdog"
 
     private(set) var currentFileURL: URL? = nil
 
@@ -59,9 +65,6 @@ actor GPSLogger {
         locationManager.distanceFilter = kCLDistanceFilterNone
         locationManager.startUpdatingHeading()
 
-        delegate.onAuthorizationChange = { [weak self] status in
-            Task { await self?.handleAuthChange(status: status) }
-        }
         delegate.onLocations = { [weak self] locations in
             Task { await self?.handleLocations(locations) }
         }
@@ -139,6 +142,7 @@ actor GPSLogger {
             }
 
             startFlushTimer()
+            scheduleWatchdog()
 
             if isIntermittentMode {
                 startIntermittentTimer()
@@ -155,6 +159,7 @@ actor GPSLogger {
         stopFlushTimer()
         stopIntermittentTimer()
         stopLocationUpdates()
+        cancelWatchdog()
         locationManager.allowsBackgroundLocationUpdates = false
         do { try gpx.close() } catch { print("Failed to close GPX: \(error)") }
         let url = self.currentFileURL
@@ -229,11 +234,6 @@ actor GPSLogger {
 
     // MARK: - Handlers
 
-    private func handleAuthChange(status: CLAuthorizationStatus) {
-        // Background updates are set once in startLogging/stopLogging.
-        // No action needed here to avoid CoreLocation assertion crashes.
-    }
-
     private func handleHeading(_ heading: CLHeading) {
         let h = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         lastTrueHeading = h
@@ -305,6 +305,9 @@ actor GPSLogger {
 
         guard !newCoords.isEmpty else { return }
 
+        // Reset watchdog — we're still alive and receiving data
+        scheduleWatchdog()
+
         let speed = lastAcceptedSpeed
         let alt = lastAcceptedAltitude
         let dist = self.totalDistance
@@ -321,7 +324,36 @@ actor GPSLogger {
         }
     }
 
-    private var lastAcceptedSpeed: Double = 0
-    private var lastAcceptedAltitude: Double = 0
-    private var lastTrueHeading: Double = -1
+    // MARK: - Watchdog notification
+
+    /// Schedules (or re-schedules) a local notification that fires if the app is killed.
+    /// Each call cancels the previous and sets a new one further in the future.
+    private nonisolated func scheduleWatchdog() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.watchdogNotificationID])
+
+        let content = UNMutableNotificationContent()
+        content.title = String(localized: "watchdog_title")
+        content.body = String(localized: "watchdog_body")
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: AppConfig.watchdogIntervalSeconds,
+            repeats: false
+        )
+        let request = UNNotificationRequest(
+            identifier: Self.watchdogNotificationID,
+            content: content,
+            trigger: trigger
+        )
+        center.add(request) { error in
+            if let error { print("Watchdog schedule error: \(error)") }
+        }
+    }
+
+    /// Cancels the watchdog notification (called on normal stop).
+    private nonisolated func cancelWatchdog() {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: [Self.watchdogNotificationID])
+    }
 }

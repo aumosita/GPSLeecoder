@@ -15,4 +15,8 @@ enum AppConfig {
 
     /// Threshold: record interval >= this value triggers intermittent GPS mode
     static let intermittentGPSThreshold: Int = 5
+
+    /// Watchdog notification interval (seconds).
+    /// If no location update resets the timer within this window, the notification fires.
+    nonisolated(unsafe) static let watchdogIntervalSeconds: TimeInterval = 120
 }
