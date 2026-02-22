@@ -98,7 +98,7 @@ actor GPSLogger {
         if let record = recordIntervalSeconds { self.recordIntervalSeconds = max(1, record) }
 
         // Read save mode from UserDefaults
-        let modeRaw = UserDefaults.standard.string(forKey: "saveMode") ?? SaveMode.session.rawValue
+        let modeRaw = UserDefaults.standard.string(forKey: "saveMode") ?? SaveMode.daily.rawValue
         saveMode = SaveMode(rawValue: modeRaw) ?? .session
 
         // Determine GPS power mode
