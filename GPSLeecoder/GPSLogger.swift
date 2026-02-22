@@ -9,6 +9,8 @@ final class TrackState: ObservableObject {
     @Published var currentSpeed: Double = 0        // m/s, negative if invalid
     @Published var currentAltitude: Double = 0      // meters
     @Published var totalDistance: Double = 0         // meters
+    @Published var currentHeading: Double = -1       // degrees, -1 = invalid
+    @Published var currentLocation: CLLocationCoordinate2D? = nil
 }
 
 actor GPSLogger {
@@ -63,6 +65,9 @@ actor GPSLogger {
         delegate.onLocations = { [weak self] locations in
             Task { await self?.handleLocations(locations) }
         }
+        delegate.onHeading = { [weak self] heading in
+            Task { await self?.handleHeading(heading) }
+        }
         delegate.onError = { error in
             print("Location error: \(error)")
         }
@@ -72,6 +77,11 @@ actor GPSLogger {
         if CLLocationManager.authorizationStatus() == .notDetermined {
             locationManager.requestWhenInUseAuthorization()
         }
+    }
+
+    /// Request a one-time location fix to seed the initial map position.
+    func requestInitialLocation() {
+        locationManager.requestLocation()
     }
 
     func requestAlwaysAuthorization() {
@@ -224,6 +234,13 @@ actor GPSLogger {
         // No action needed here to avoid CoreLocation assertion crashes.
     }
 
+    private func handleHeading(_ heading: CLHeading) {
+        let h = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+        Task { @MainActor in
+            trackState.currentHeading = h
+        }
+    }
+
     private func handleLocations(_ locations: [CLLocation]) async {
         guard !locations.isEmpty else { return }
 
@@ -291,11 +308,15 @@ actor GPSLogger {
         let alt = lastAcceptedAltitude
         let dist = self.totalDistance
 
+        let lastCoord = newCoords.last
         await MainActor.run {
             trackState.coordinates.append(contentsOf: newCoords)
             trackState.currentSpeed = speed
             trackState.currentAltitude = alt
             trackState.totalDistance = dist
+            if let coord = lastCoord {
+                trackState.currentLocation = coord
+            }
         }
     }
 

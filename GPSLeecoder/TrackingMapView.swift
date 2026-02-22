@@ -10,12 +10,21 @@ struct TrackingMapView: View {
     @State private var showHistory = false
     @State private var fileToShare: URL?
 
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
+    @State private var currentCameraDistance: Double = 500  // meters (≈100m scale)
+    @State private var hasSetInitialZoom = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Map(position: $cameraPosition) {
                 UserAnnotation()
+                // Heading wedge indicator
+                if state.currentHeading >= 0, let loc = state.currentLocation {
+                    Annotation("", coordinate: loc) {
+                        HeadingWedge(heading: state.currentHeading)
+                            .allowsHitTesting(false)
+                    }
+                }
                 if state.coordinates.count > 1 {
                     MapPolyline(coordinates: state.coordinates)
                         .stroke(.blue, lineWidth: 3)
@@ -26,6 +35,9 @@ struct TrackingMapView: View {
                 MapCompass()
             }
             .mapControlVisibility(.visible)
+            .onMapCameraChange(frequency: .continuous) { context in
+                currentCameraDistance = context.camera.distance
+            }
 
             if state.isLogging {
                 LiveStatsBar(speed: state.currentSpeed,
@@ -45,13 +57,23 @@ struct TrackingMapView: View {
             if status == .notDetermined || status == .denied {
                 showOnboarding = true
             }
-            // Set initial camera to user location at ~100m zoom
-            if let loc = CLLocationManager().location {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: loc.coordinate,
-                    latitudinalMeters: 200,
-                    longitudinalMeters: 200
-                ))
+            // Request a one-time location fix to seed initial map position
+            Task { await GPSLogger.shared.requestInitialLocation() }
+        }
+        .task {
+            // Wait for initial location, then set zoom to ~100m
+            for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(250))
+                if let loc = state.currentLocation {
+                    if !hasSetInitialZoom {
+                        hasSetInitialZoom = true
+                        cameraPosition = .camera(MapCamera(
+                            centerCoordinate: loc,
+                            distance: 500
+                        ))
+                    }
+                    break
+                }
             }
         }
         .navigationTitle(state.isLogging ? String(localized: "nav_title_logging") : String(localized: "nav_title_idle"))
@@ -70,11 +92,10 @@ struct TrackingMapView: View {
                 }
 
                 Button {
-                    if let loc = CLLocationManager().location {
-                        cameraPosition = .region(MKCoordinateRegion(
-                            center: loc.coordinate,
-                            latitudinalMeters: 200,
-                            longitudinalMeters: 200
+                    if let loc = state.currentLocation {
+                        cameraPosition = .camera(MapCamera(
+                            centerCoordinate: loc,
+                            distance: currentCameraDistance
                         ))
                     } else {
                         cameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
@@ -222,5 +243,29 @@ private struct LiveStatsBar: View {
 
     private var distanceUnit: String {
         distance >= 1000 ? "km" : "m"
+    }
+}
+
+// MARK: - Heading wedge indicator
+private struct HeadingWedge: View {
+    let heading: Double  // degrees from true north
+
+    var body: some View {
+        Canvas { context, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let radius = min(size.width, size.height) / 2
+            let spreadAngle: Double = 50  // total spread in degrees
+            let startAngle = Angle(degrees: -90 + heading - spreadAngle / 2)
+            let endAngle = Angle(degrees: -90 + heading + spreadAngle / 2)
+
+            var path = Path()
+            path.move(to: center)
+            path.addArc(center: center, radius: radius,
+                        startAngle: startAngle, endAngle: endAngle, clockwise: false)
+            path.closeSubpath()
+
+            context.fill(path, with: .color(.blue.opacity(0.25)))
+        }
+        .frame(width: 80, height: 80)
     }
 }

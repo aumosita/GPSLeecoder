@@ -4,6 +4,7 @@ import CoreLocation
 final class LocationDelegate: NSObject, CLLocationManagerDelegate {
     var onAuthorizationChange: ((CLAuthorizationStatus) -> Void)?
     var onLocations: (([CLLocation]) -> Void)?
+    var onHeading: ((CLHeading) -> Void)?
     var onError: ((Error) -> Void)?
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -15,7 +16,7 @@ final class LocationDelegate: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        // Heading is consumed by MapKit's UserAnnotation to show the direction cone.
+        onHeading?(newHeading)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
