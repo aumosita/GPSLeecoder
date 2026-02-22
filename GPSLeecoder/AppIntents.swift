@@ -20,7 +20,7 @@ struct StartLoggingIntent: AppIntent {
             let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
             await GPSLogger.shared.startLogging(
                 updateInterval: max(1, flush == 0 ? AppConfig.defaultFlushIntervalMinutes : flush),
-                recordIntervalSeconds: max(1, record == 0 ? 5 : record)
+                recordIntervalSeconds: max(1, record == 0 ? 20 : record)
             )
             return .result(value: String(localized: "shortcut_result_ok"))
         }

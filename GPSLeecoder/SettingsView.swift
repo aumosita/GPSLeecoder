@@ -2,8 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("flushIntervalMinutes") private var flushIntervalMinutes: Int = AppConfig.defaultFlushIntervalMinutes
-    @AppStorage("recordIntervalSeconds") private var recordIntervalSeconds: Int = 5
-    @AppStorage("saveMode") private var saveModeRaw: String = SaveMode.session.rawValue
+    @AppStorage("recordIntervalSeconds") private var recordIntervalSeconds: Int = 20
+    @AppStorage("saveMode") private var saveModeRaw: String = SaveMode.daily.rawValue
     @AppStorage("distanceFilterMeters") private var distanceFilterMeters: Int = 0
     @AppStorage("accuracyFilterMeters") private var accuracyFilterMeters: Int = 0
 

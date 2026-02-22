@@ -27,11 +27,11 @@ actor GPSLogger {
     private let gpx = GPXWriter()
 
     private var flushIntervalMinutes: Int = AppConfig.defaultFlushIntervalMinutes
-    private var recordIntervalSeconds: Int = 5
+    private var recordIntervalSeconds: Int = 20
     private var lastSavedLocationTime: Date? = nil
     private var flushTask: Task<Void, Never>? = nil
 
-    private var saveMode: SaveMode = .session
+    private var saveMode: SaveMode = .daily
     private var isIntermittentMode: Bool = false
     private var intermittentTimer: Task<Void, Never>? = nil
     /// When in intermittent mode, this flag indicates we are waiting for a single location fix.

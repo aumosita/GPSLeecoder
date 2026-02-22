@@ -10,7 +10,7 @@ struct TrackingMapView: View {
     @State private var showHistory = false
     @State private var fileToShare: URL?
 
-    @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
+    @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.978), span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01))))
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -71,7 +71,7 @@ struct TrackingMapView: View {
                         Task {
                             let flush = min(max(flushIntervalMinutes, 1), 60)
                             let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
-                            let recordClamped = max(1, record == 0 ? 5 : record)
+                            let recordClamped = max(1, record == 0 ? 20 : record)
                             await GPSLogger.shared.startLogging(updateInterval: flush, suggestedName: nil, recordIntervalSeconds: recordClamped)
                         }
                     } label: {
