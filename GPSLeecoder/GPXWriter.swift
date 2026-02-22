@@ -102,7 +102,11 @@ private extension GPXWriter {
     static func gpxHeader() -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <gpx version="1.1" creator="GPSLogger" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+        <gpx version="1.1" creator="GPSLeecoder"
+             xmlns="http://www.topografix.com/GPX/1/1"
+             xmlns:gpxleecoder="https://github.com/aumosita/GPSLeecoder"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
         """.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -113,11 +117,42 @@ private extension GPXWriter {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let time = iso.string(from: location.timestamp)
-        return """
-          <trkpt lat="\(lat)" lon="\(lon)">
-            <ele>\(ele)</ele>
-            <time>\(time)</time>
-          </trkpt>
-        """.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var xml = "  <trkpt lat=\"\(lat)\" lon=\"\(lon)\">\n"
+        xml += "    <ele>\(String(format: "%.1f", ele))</ele>\n"
+        xml += "    <time>\(time)</time>\n"
+
+        // Horizontal accuracy → hdop (approximate: hdop ≈ accuracy / 5)
+        if location.horizontalAccuracy >= 0 {
+            xml += "    <hdop>\(String(format: "%.1f", location.horizontalAccuracy))</hdop>\n"
+        }
+        // Vertical accuracy → vdop
+        if location.verticalAccuracy >= 0 {
+            xml += "    <vdop>\(String(format: "%.1f", location.verticalAccuracy))</vdop>\n"
+        }
+
+        // Extensions: speed, course, accuracies
+        var extLines: [String] = []
+        if location.speed >= 0 {
+            extLines.append("        <gpxleecoder:speed>\(String(format: "%.2f", location.speed))</gpxleecoder:speed>")
+        }
+        if location.course >= 0 {
+            extLines.append("        <gpxleecoder:course>\(String(format: "%.1f", location.course))</gpxleecoder:course>")
+        }
+        if location.speedAccuracy >= 0 {
+            extLines.append("        <gpxleecoder:speedAccuracy>\(String(format: "%.2f", location.speedAccuracy))</gpxleecoder:speedAccuracy>")
+        }
+        if location.courseAccuracy >= 0 {
+            extLines.append("        <gpxleecoder:courseAccuracy>\(String(format: "%.1f", location.courseAccuracy))</gpxleecoder:courseAccuracy>")
+        }
+
+        if !extLines.isEmpty {
+            xml += "    <extensions>\n"
+            xml += extLines.joined(separator: "\n") + "\n"
+            xml += "    </extensions>\n"
+        }
+
+        xml += "  </trkpt>"
+        return xml
     }
 }
