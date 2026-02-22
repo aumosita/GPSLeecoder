@@ -28,6 +28,11 @@ struct TrackingMapView: View {
         }
         .navigationTitle(state.isLogging ? String(localized: "nav_title_logging") : String(localized: "nav_title_idle"))
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                if state.isLogging {
+                    RecordingIndicator()
+                }
+            }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button {
                     showHistory = true
@@ -109,4 +114,22 @@ struct TrackingMapView: View {
 
 #Preview {
     NavigationStack { TrackingMapView() }
+}
+
+// MARK: - Pulsing recording indicator
+private struct RecordingIndicator: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(.red)
+                .frame(width: 10, height: 10)
+                .opacity(isPulsing ? 0.3 : 1.0)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
+            Text("nav_title_logging")
+                .font(.headline)
+        }
+        .onAppear { isPulsing = true }
+    }
 }
