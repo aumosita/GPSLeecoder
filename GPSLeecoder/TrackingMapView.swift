@@ -15,6 +15,7 @@ struct TrackingMapView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             Map(position: $cameraPosition) {
+                UserAnnotation()
                 if state.coordinates.count > 1 {
                     MapPolyline(coordinates: state.coordinates)
                         .stroke(.blue, lineWidth: 3)
@@ -24,11 +25,18 @@ struct TrackingMapView: View {
                 MapScaleView()
                 MapCompass()
             }
+            .mapControlVisibility(.visible)
 
             if state.isLogging {
                 LiveStatsBar(speed: state.currentSpeed,
                              altitude: state.currentAltitude,
                              distance: state.totalDistance)
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            if state.isLogging {
+                RecordingIndicator()
+                    .padding(.top, 4)
             }
         }
         .onAppear {
@@ -40,11 +48,6 @@ struct TrackingMapView: View {
         }
         .navigationTitle(state.isLogging ? String(localized: "nav_title_logging") : String(localized: "nav_title_idle"))
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                if state.isLogging {
-                    RecordingIndicator()
-                }
-            }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button {
                     showHistory = true
