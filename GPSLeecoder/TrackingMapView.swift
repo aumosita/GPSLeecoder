@@ -8,6 +8,7 @@ struct TrackingMapView: View {
     @State private var showOnboarding = false
     @State private var showSettings = false
     @State private var showHistory = false
+    @State private var fileToShare: URL?
 
     @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
 
@@ -67,12 +68,12 @@ struct TrackingMapView: View {
 
                 if !state.isLogging, let url = state.currentFileURL {
                     Spacer()
-                    ShareLink(item: url) {
+                    Button {
+                        markAsExported(url)
+                        fileToShare = url
+                    } label: {
                         Label(String(localized: "button_share_gpx"), systemImage: "square.and.arrow.up")
                     }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        markAsExported(url)
-                    })
                 }
             }
         }
@@ -84,6 +85,14 @@ struct TrackingMapView: View {
         }
         .sheet(isPresented: $showOnboarding) {
             OnboardingPermissionView()
+        }
+        .sheet(isPresented: Binding(
+            get: { fileToShare != nil },
+            set: { if !$0 { fileToShare = nil } }
+        )) {
+            if let url = fileToShare {
+                ShareSheetView(activityItems: [url])
+            }
         }
     }
 

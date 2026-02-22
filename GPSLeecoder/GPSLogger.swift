@@ -20,6 +20,13 @@ actor GPSLogger {
     private var lastSavedLocationTime: Date? = nil
     private var flushTask: Task<Void, Never>? = nil
 
+    private var saveMode: SaveMode = .session
+    private var isIntermittentMode: Bool = false
+    private var intermittentTimer: Task<Void, Never>? = nil
+    /// When in intermittent mode, this flag indicates we are waiting for a single location fix.
+    private var waitingForFix: Bool = false
+    private var isActivelyLogging: Bool = false
+
     private(set) var currentFileURL: URL? = nil
 
     // Shared UI state (published on main thread)
@@ -39,7 +46,6 @@ actor GPSLogger {
             Task { await self?.handleLocations(locations) }
         }
         delegate.onError = { error in
-            // You may want to log or surface the error
             print("Location error: \(error)")
         }
     }
@@ -62,8 +68,20 @@ actor GPSLogger {
     func startLogging(updateInterval: Int? = nil, suggestedName: String? = nil, recordIntervalSeconds: Int? = nil) async {
         if let interval = updateInterval { flushIntervalMinutes = max(1, interval) }
         if let record = recordIntervalSeconds { self.recordIntervalSeconds = max(1, record) }
+
+        // Read save mode from UserDefaults
+        let modeRaw = UserDefaults.standard.string(forKey: "saveMode") ?? SaveMode.session.rawValue
+        saveMode = SaveMode(rawValue: modeRaw) ?? .session
+
+        // Determine GPS power mode
+        isIntermittentMode = self.recordIntervalSeconds >= AppConfig.intermittentGPSThreshold
+
         do {
-            try gpx.startNewFile(suggestedName: suggestedName)
+            if saveMode == .daily {
+                try gpx.startNewFileForDate(Date())
+            } else {
+                try gpx.startNewFile(suggestedName: suggestedName)
+            }
             currentFileURL = gpx.fileURL
             lastSavedLocationTime = nil
             let url = self.currentFileURL
@@ -72,15 +90,23 @@ actor GPSLogger {
                 trackState.isLogging = true
                 trackState.currentFileURL = url
             }
-            startLocationUpdates()
+            isActivelyLogging = true
             startFlushTimer()
+
+            if isIntermittentMode {
+                startIntermittentTimer()
+            } else {
+                startLocationUpdates()
+            }
         } catch {
             print("Failed to start logging: \(error)")
         }
     }
 
     func stopLogging() async {
+        isActivelyLogging = false
         stopFlushTimer()
+        stopIntermittentTimer()
         stopLocationUpdates()
         do { try gpx.close() } catch { print("Failed to close GPX: \(error)") }
         let url = self.currentFileURL
@@ -90,27 +116,57 @@ actor GPSLogger {
         }
     }
 
+    // MARK: - Continuous GPS mode
+
     private func startLocationUpdates() {
         let status = CLLocationManager.authorizationStatus()
-
-        // Only allow background updates if we truly have Always authorization.
         locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
 
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
-            // For long background logging, Always is preferred; still start for foreground
             locationManager.startUpdatingLocation()
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
         default:
-            // Do not start updates when denied or restricted
             break
         }
     }
 
     private func stopLocationUpdates() {
         locationManager.stopUpdatingLocation()
+        locationManager.allowsBackgroundLocationUpdates = false
     }
+
+    // MARK: - Intermittent GPS mode
+
+    private func startIntermittentTimer() {
+        stopIntermittentTimer()
+        // Fire once immediately, then repeat at interval
+        requestSingleFix()
+        intermittentTimer = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(await self.recordIntervalSeconds) * 1_000_000_000)
+                guard !Task.isCancelled else { break }
+                await self.requestSingleFix()
+            }
+        }
+    }
+
+    private func stopIntermittentTimer() {
+        intermittentTimer?.cancel()
+        intermittentTimer = nil
+        waitingForFix = false
+    }
+
+    private func requestSingleFix() {
+        waitingForFix = true
+        let status = CLLocationManager.authorizationStatus()
+        locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
+        locationManager.startUpdatingLocation()
+    }
+
+    // MARK: - Flush timer
 
     private func startFlushTimer() {
         stopFlushTimer()
@@ -128,27 +184,61 @@ actor GPSLogger {
         flushTask = nil
     }
 
+    // MARK: - Handlers
+
     private func handleAuthChange(status: CLAuthorizationStatus) {
-        // Keep background updates flag in sync with authorization changes.
-        locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
+        // Only allow background updates if we are actively logging AND have Always authorization.
+        // Setting this when not logging causes a CoreLocation assertion crash.
+        if isActivelyLogging {
+            locationManager.allowsBackgroundLocationUpdates = (status == .authorizedAlways)
+        }
     }
 
     private func handleLocations(_ locations: [CLLocation]) async {
         guard !locations.isEmpty else { return }
 
         var newCoords: [CLLocationCoordinate2D] = []
-        // Ensure chronological order to apply interval filtering correctly
         let ordered = locations.sorted { $0.timestamp < $1.timestamp }
 
         for loc in ordered {
-            if let last = lastSavedLocationTime {
-                if loc.timestamp.timeIntervalSince(last) < TimeInterval(recordIntervalSeconds) {
-                    continue
+            // Daily mode: check for date change
+            if saveMode == .daily {
+                let cal = Calendar.current
+                let locDay = cal.dateComponents([.year, .month, .day], from: loc.timestamp)
+                if let currentDay = gpx.currentFileDate, currentDay != locDay {
+                    // Date changed — rotate file
+                    do {
+                        try gpx.close()
+                        try gpx.startNewFileForDate(loc.timestamp)
+                        currentFileURL = gpx.fileURL
+                        let url = self.currentFileURL
+                        await MainActor.run {
+                            trackState.currentFileURL = url
+                        }
+                    } catch {
+                        print("Date rotation error: \(error)")
+                    }
                 }
             }
+
+            // Interval filtering (only for continuous mode; intermittent mode already spaces out)
+            if !isIntermittentMode {
+                if let last = lastSavedLocationTime {
+                    if loc.timestamp.timeIntervalSince(last) < TimeInterval(recordIntervalSeconds) {
+                        continue
+                    }
+                }
+            }
+
             do { try gpx.append(location: loc) } catch { print("Append error: \(error)") }
             lastSavedLocationTime = loc.timestamp
             newCoords.append(loc.coordinate)
+        }
+
+        // In intermittent mode, turn off GPS after getting a fix
+        if isIntermittentMode && waitingForFix && !newCoords.isEmpty {
+            waitingForFix = false
+            locationManager.stopUpdatingLocation()
         }
 
         guard !newCoords.isEmpty else { return }
@@ -158,4 +248,3 @@ actor GPSLogger {
         }
     }
 }
-
