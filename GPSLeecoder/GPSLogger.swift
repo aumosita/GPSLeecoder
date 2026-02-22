@@ -55,6 +55,7 @@ actor GPSLogger {
         locationManager.pausesLocationUpdatesAutomatically = true
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.distanceFilter = kCLDistanceFilterNone
+        locationManager.startUpdatingHeading()
 
         delegate.onAuthorizationChange = { [weak self] status in
             Task { await self?.handleAuthChange(status: status) }

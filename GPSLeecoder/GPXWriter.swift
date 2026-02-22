@@ -19,7 +19,7 @@ final class GPXWriter: @unchecked Sendable {
     func startNewFile(suggestedName: String? = nil) throws {
         let tracksDir = try Self.tracksDirectory()
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        formatter.dateFormat = "yyyy-MM-dd_HHmmss"
         let base = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? suggestedName! : formatter.string(from: Date())
         let url = tracksDir.appendingPathComponent("\(base).gpx")
         try openFile(at: url, baseName: base, in: tracksDir)

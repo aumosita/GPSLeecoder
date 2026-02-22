@@ -10,7 +10,7 @@ struct TrackingMapView: View {
     @State private var showHistory = false
     @State private var fileToShare: URL?
 
-    @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
+    @State private var cameraPosition: MapCameraPosition = .automatic
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -45,6 +45,14 @@ struct TrackingMapView: View {
             if status == .notDetermined || status == .denied {
                 showOnboarding = true
             }
+            // Set initial camera to user location at ~100m zoom
+            if let loc = CLLocationManager().location {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: loc.coordinate,
+                    latitudinalMeters: 200,
+                    longitudinalMeters: 200
+                ))
+            }
         }
         .navigationTitle(state.isLogging ? String(localized: "nav_title_logging") : String(localized: "nav_title_idle"))
         .toolbar {
@@ -62,7 +70,15 @@ struct TrackingMapView: View {
                 }
 
                 Button {
-                    cameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
+                    if let loc = CLLocationManager().location {
+                        cameraPosition = .region(MKCoordinateRegion(
+                            center: loc.coordinate,
+                            latitudinalMeters: 200,
+                            longitudinalMeters: 200
+                        ))
+                    } else {
+                        cameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
+                    }
                 } label: {
                     Label(String(localized: "button_current_location"), systemImage: "location.circle")
                 }

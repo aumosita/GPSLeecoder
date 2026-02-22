@@ -14,6 +14,10 @@ final class LocationDelegate: NSObject, CLLocationManagerDelegate {
         onLocations?(locations)
     }
 
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        // Heading is consumed by MapKit's UserAnnotation to show the direction cone.
+    }
+
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         onError?(error)
     }
