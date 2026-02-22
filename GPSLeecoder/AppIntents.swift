@@ -17,26 +17,25 @@ struct StartLoggingIntent: AppIntent {
     static var openAppWhenRun: Bool = false
 
     func perform() async throws -> some IntentResult {
-        let requestedInterval = intervalMinutes ?? AppConfig.defaultFlushIntervalMinutes
-        let sanitizedInterval = max(1, requestedInterval)
-        let requestedRecord = recordIntervalSeconds ?? 5
-        let sanitizedRecord = max(1, requestedRecord)
+        let requestedInterval = intervalMinutes ?? UserDefaults.standard.integer(forKey: "flushIntervalMinutes")
+        let sanitizedInterval = max(1, requestedInterval == 0 ? AppConfig.defaultFlushIntervalMinutes : requestedInterval)
+        let requestedRecord = recordIntervalSeconds ?? UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
+        let sanitizedRecord = max(1, requestedRecord == 0 ? 5 : requestedRecord)
+
         let status = CLLocationManager.authorizationStatus()
 
         switch status {
         case .denied, .restricted:
-            return .result(value: "ERROR: Location access is denied or restricted. Please enable in Settings.")
+            return .result(value: String(localized: "shortcut_error_denied"))
         case .notDetermined:
-            return .result(value: "ERROR: Location permission not granted. Please open the app first to grant access.")
-        case .authorizedWhenInUse:
-            await GPSLogger.shared.startLogging(updateInterval: sanitizedInterval, suggestedName: sessionName, recordIntervalSeconds: sanitizedRecord)
-            return .result(value: "OK")
-        case .authorizedAlways:
-            await GPSLogger.shared.startLogging(updateInterval: sanitizedInterval, suggestedName: sessionName, recordIntervalSeconds: sanitizedRecord)
-            return .result(value: "OK")
-        @unknown default:
-            await GPSLogger.shared.startLogging(updateInterval: sanitizedInterval, suggestedName: sessionName, recordIntervalSeconds: sanitizedRecord)
-            return .result(value: "OK")
+            return .result(value: String(localized: "shortcut_error_not_determined"))
+        default:
+            await GPSLogger.shared.startLogging(
+                updateInterval: sanitizedInterval,
+                suggestedName: sessionName,
+                recordIntervalSeconds: sanitizedRecord
+            )
+            return .result(value: String(localized: "shortcut_result_ok"))
         }
     }
 }
@@ -49,7 +48,7 @@ struct StopLoggingIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         await GPSLogger.shared.stopLogging()
-        return .result(value: "OK")
+        return .result(value: String(localized: "shortcut_result_ok"))
     }
 }
 
