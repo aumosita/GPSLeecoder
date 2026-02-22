@@ -1,0 +1,286 @@
+{
+  "sourceLanguage" : "ko",
+  "strings" : {
+    "nav_title_logging" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "기록 중" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Logging" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Enregistrement" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "記録中" } }
+      }
+    },
+    "nav_title_idle" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "대기 중" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Idle" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "En attente" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "待機中" } }
+      }
+    },
+    "button_history" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "기록" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "History" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Historique" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "履歴" } }
+      }
+    },
+    "button_settings" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "설정" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Paramètres" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "設定" } }
+      }
+    },
+    "button_current_location" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "현재 위치로 가기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Go to Current Location" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aller à la position actuelle" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "現在地へ移動" } }
+      }
+    },
+    "button_stop" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "중지" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Arrêter" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "停止" } }
+      }
+    },
+    "button_start" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "시작" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Démarrer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "開始" } }
+      }
+    },
+    "button_share_gpx" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "GPX 공유" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Share GPX" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Partager GPX" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "GPXを共有" } }
+      }
+    },
+    "onboarding_title" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "정확한 위치 권한이 필요합니다" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Location Access Required" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Accès à la localisation requis" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "位置情報のアクセス許可が必要です" } }
+      }
+    },
+    "onboarding_description" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "GPX 트랙을 기록하려면 앱이 실행 중일 때는 물론, 선택적으로 백그라운드에서도 위치 접근 권한이 필요할 수 있습니다." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "To record GPX tracks, this app needs location access while in use, and optionally in the background." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pour enregistrer des traces GPX, cette application a besoin d'accéder à votre position en cours d'utilisation, et éventuellement en arrière-plan." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "GPXトラックを記録するには、アプリ使用中の位置情報アクセスが必要です。バックグラウンドでの記録にはオプションで常時アクセスが必要です。" } }
+      }
+    },
+    "onboarding_when_in_use" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "앱 사용 중 위치 접근(필수)" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "While Using the App (required)" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pendant l'utilisation (obligatoire)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "アプリ使用中のアクセス（必須）" } }
+      }
+    },
+    "onboarding_always" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "항상 허용(선택) — 백그라운드 기록 안정성 향상" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Always Allow (optional) — improves background recording" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Toujours autoriser (optionnel) — améliore l'enregistrement en arrière-plan" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "常に許可（任意） — バックグラウンド記録の安定性向上" } }
+      }
+    },
+    "onboarding_request_when_in_use" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "앱 사용 중 허용 요청" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Request While Using" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Demander pendant l'utilisation" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "使用中のアクセスを要求" } }
+      }
+    },
+    "onboarding_request_always" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "항상 허용 요청 (백그라운드 기록)" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Request Always (Background Recording)" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Demander l'accès permanent (enregistrement en arrière-plan)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "常時許可を要求（バックグラウンド記録）" } }
+      }
+    },
+    "onboarding_denied" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "위치 접근이 거부되었습니다. 설정에서 변경해주세요." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Location access is denied. Please change it in Settings." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L'accès à la localisation est refusé. Veuillez le modifier dans les Réglages." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "位置情報のアクセスが拒否されています。設定で変更してください。" } }
+      }
+    },
+    "button_open_settings" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "설정 열기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Settings" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ouvrir les Réglages" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "設定を開く" } }
+      }
+    },
+    "button_close" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "닫기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "閉じる" } }
+      }
+    },
+    "onboarding_footer" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "언제든 설정에서 권한을 변경할 수 있습니다." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You can change permissions anytime in Settings." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Vous pouvez modifier les autorisations à tout moment dans les Réglages." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "設定からいつでも権限を変更できます。" } }
+      }
+    },
+    "settings_section_recording" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "기록 저장" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recording" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Enregistrement" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "記録保存" } }
+      }
+    },
+    "settings_sync_interval" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "iCloud/Dropbox 동기화 주기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "iCloud/Dropbox Sync Interval" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intervalle de synchronisation iCloud/Dropbox" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "iCloud/Dropbox 同期間隔" } }
+      }
+    },
+    "settings_sync_interval_value %lld" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "%lld분" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld min" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%lld min" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%lld分" } }
+      }
+    },
+    "settings_sync_label" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "동기화 주기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sync Interval" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intervalle de synchronisation" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "同期間隔" } }
+      }
+    },
+    "settings_sync_min_label" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "1분" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 min" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 min" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1分" } }
+      }
+    },
+    "settings_sync_max_label" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "60분" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "60 min" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "60 min" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "60分" } }
+      }
+    },
+    "settings_record_interval" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "GPX 기록 주기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GPX Record Interval" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intervalle d'enregistrement GPX" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "GPX 記録間隔" } }
+      }
+    },
+    "settings_record_interval_value %lld" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "%lld초" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld sec" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%lld sec" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%lld秒" } }
+      }
+    },
+    "settings_record_label" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "기록 주기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record Interval" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intervalle d'enregistrement" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "記録間隔" } }
+      }
+    },
+    "settings_record_min_label" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "1초" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 sec" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "1 sec" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "1秒" } }
+      }
+    },
+    "settings_record_max_label" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "60초" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "60 sec" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "60 sec" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "60秒" } }
+      }
+    },
+    "settings_footer" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "현재는 로컬 저장만 사용합니다. 추후 iCloud/Dropbox를 연결할 수 있습니다." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Currently using local storage only. iCloud/Dropbox can be connected later." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Stockage local uniquement pour le moment. iCloud/Dropbox pourra être connecté ultérieurement." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "現在はローカル保存のみです。今後iCloud/Dropboxに接続できます。" } }
+      }
+    },
+    "settings_accessibility_update" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "업데이트 주기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Update Interval" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intervalle de mise à jour" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "更新間隔" } }
+      }
+    },
+    "settings_accessibility_record" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "기록 주기" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record Interval" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intervalle d'enregistrement" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "記録間隔" } }
+      }
+    },
+    "nav_title_settings" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "설정" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Paramètres" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "設定" } }
+      }
+    },
+    "nav_title_history" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "기록 히스토리" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Track History" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Historique des traces" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "記録履歴" } }
+      }
+    },
+    "accessibility_exported" : {
+      "localizations" : {
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "내보내기 완료" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exported" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Exporté" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "エクスポート済み" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
