@@ -2,10 +2,16 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("flushIntervalMinutes") private var flushIntervalMinutes: Int = AppConfig.defaultFlushIntervalMinutes
-    @AppStorage("recordIntervalSeconds") private var recordIntervalSeconds: Int = 20
+    @AppStorage("recordIntervalSeconds") private var recordIntervalSeconds: Int = 30
     @AppStorage("saveMode") private var saveModeRaw: String = SaveMode.daily.rawValue
-    @AppStorage("distanceFilterMeters") private var distanceFilterMeters: Int = 0
-    @AppStorage("accuracyFilterMeters") private var accuracyFilterMeters: Int = 0
+    @AppStorage("distanceFilterMeters") private var distanceFilterMeters: Int = 10
+    @AppStorage("accuracyFilterMeters") private var accuracyFilterMeters: Int = 100
+    @AppStorage("dropboxUploadEnabled") private var dropboxUploadEnabled: Bool = false
+
+    @State private var dropboxLinked: Bool = false
+    @State private var authCode: String = ""
+    @State private var isExchanging: Bool = false
+    @State private var authError: String? = nil
 
     var body: some View {
         Form {
@@ -113,11 +119,86 @@ struct SettingsView: View {
                 Text("settings_filters_note")
             }
 
+            Section {
+                Toggle(String(localized: "settings_dropbox_toggle"), isOn: $dropboxUploadEnabled)
+
+                if dropboxUploadEnabled {
+                    if dropboxLinked {
+                        Label {
+                            Text("settings_dropbox_connected")
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+
+                        Button(role: .destructive) {
+                            DropboxUploader.unlink()
+                            dropboxLinked = false
+                            dropboxUploadEnabled = false
+                        } label: {
+                            Label(String(localized: "settings_dropbox_disconnect"),
+                                  systemImage: "xmark.circle")
+                        }
+                    } else {
+                        Button {
+                            UIApplication.shared.open(DropboxUploader.authorizationURL)
+                        } label: {
+                            Label(String(localized: "settings_dropbox_connect"),
+                                  systemImage: "arrow.up.right.square")
+                        }
+
+                        TextField(String(localized: "settings_dropbox_auth_code"), text: $authCode)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+
+                        Button {
+                            guard !authCode.isEmpty else { return }
+                            isExchanging = true
+                            authError = nil
+                            Task {
+                                let success = await DropboxUploader.exchangeAuthorizationCode(authCode)
+                                isExchanging = false
+                                if success {
+                                    dropboxLinked = true
+                                    authCode = ""
+                                } else {
+                                    authError = String(localized: "settings_dropbox_auth_failed")
+                                }
+                            }
+                        } label: {
+                            if isExchanging {
+                                ProgressView()
+                            } else {
+                                Text("settings_dropbox_auth_submit")
+                            }
+                        }
+                        .disabled(authCode.isEmpty || isExchanging)
+
+                        if let error = authError {
+                            Label {
+                                Text(error)
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .font(.caption)
+                        }
+                    }
+                }
+            } header: {
+                Text("settings_section_dropbox")
+            } footer: {
+                Text("settings_dropbox_note")
+            }
+
             Section(footer: Text("settings_footer")) {
                 EmptyView()
             }
         }
         .navigationTitle(String(localized: "nav_title_settings"))
+        .onAppear {
+            dropboxLinked = DropboxUploader.isLinked
+        }
     }
 }
 

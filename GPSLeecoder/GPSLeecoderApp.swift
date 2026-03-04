@@ -6,19 +6,25 @@
 //
 
 import SwiftUI
-import UserNotifications
 
 @main
 struct GPSLeecoderApp: App {
-    init() {
-        // Request notification permission for watchdog alerts
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-    }
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             NavigationStack {
                 TrackingMapView()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                GPSLogger.shared.applicationDidBecomeActive()
+            case .background:
+                GPSLogger.shared.applicationDidEnterBackground()
+            default:
+                break
             }
         }
     }

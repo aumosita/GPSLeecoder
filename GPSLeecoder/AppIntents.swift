@@ -8,21 +8,25 @@ struct StartLoggingIntent: AppIntent {
     static var openAppWhenRun: Bool = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let status = CLLocationManager.authorizationStatus()
+        let status = CLLocationManager().authorizationStatus
 
         switch status {
         case .denied, .restricted:
             return .result(value: String(localized: "shortcut_error_denied"))
-        case .notDetermined:
-            return .result(value: String(localized: "shortcut_error_not_determined"))
-        default:
+        case .authorizedAlways:
             let flush = UserDefaults.standard.integer(forKey: "flushIntervalMinutes")
             let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
-            await GPSLogger.shared.startLogging(
+            let started = await GPSLogger.shared.startLogging(
                 updateInterval: max(1, flush == 0 ? AppConfig.defaultFlushIntervalMinutes : flush),
                 recordIntervalSeconds: max(1, record == 0 ? 20 : record)
             )
-            return .result(value: String(localized: "shortcut_result_ok"))
+            return .result(
+                value: started
+                    ? String(localized: "shortcut_result_ok")
+                    : "Always location access is required to start logging."
+            )
+        default:
+            return .result(value: "Always location access is required to start logging.")
         }
     }
 }

@@ -6,6 +6,8 @@ struct OnboardingPermissionView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        let status = CLLocationManager().authorizationStatus
+
         VStack(spacing: 16) {
             Image(systemName: "location.circle.fill")
                 .font(.system(size: 56))
@@ -21,22 +23,23 @@ struct OnboardingPermissionView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Label(String(localized: "onboarding_when_in_use"), systemImage: "checkmark.circle")
-                Label(String(localized: "onboarding_always"), systemImage: "circle")
+                Label(
+                    String(localized: "onboarding_always"),
+                    systemImage: status == .authorizedAlways ? "checkmark.circle" : "circle"
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
 
-            let status = CLLocationManager.authorizationStatus()
-
             VStack(spacing: 12) {
                 if status == .notDetermined {
                     Button(String(localized: "onboarding_request_when_in_use")) {
-                        Task { await GPSLogger.shared.requestAuthorization() }
+                        GPSLogger.shared.requestAuthorization()
                     }
                     .buttonStyle(.borderedProminent)
                 } else if status == .authorizedWhenInUse {
                     Button(String(localized: "onboarding_request_always")) {
-                        Task { await GPSLogger.shared.requestAlwaysAuthorization() }
+                        GPSLogger.shared.requestAlwaysAuthorization()
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -53,7 +56,7 @@ struct OnboardingPermissionView: View {
                     }
                 }
 
-                if status == .authorizedAlways || status == .authorizedWhenInUse {
+                if status == .authorizedAlways {
                     Button(String(localized: "button_close")) {
                         dismiss()
                     }

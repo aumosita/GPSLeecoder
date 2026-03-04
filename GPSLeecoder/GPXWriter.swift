@@ -83,6 +83,25 @@ final class GPXWriter: @unchecked Sendable {
         currentFileDate = nil
     }
 
+    /// Attempts to recover a file handle by reopening the file at the end.
+    /// Used when the handle becomes invalid during recording.
+    func recoverFileHandle(at url: URL) throws {
+        // Close existing handle if any
+        try? fileHandle?.close()
+        fileHandle = nil
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "GPXWriter", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(url.lastPathComponent)"])
+        }
+
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        self.fileHandle = handle
+        self.fileURL = url
+        print("[GPXWriter] File handle recovered for \(url.lastPathComponent)")
+    }
+
     // MARK: - Private helpers
 
     /// Opens a new file (session mode). Adds a numeric suffix if the file already exists.
@@ -166,7 +185,7 @@ private extension GPXWriter {
     static func gpxHeader() -> String {
         return """
         <?xml version="1.0" encoding="UTF-8"?>
-        <gpx version="1.1" creator="GPSLeecoder"
+        <gpx version="1.1" creator="June GPS Recorder for Photographers"
              xmlns="http://www.topografix.com/GPX/1/1"
              xmlns:gpxleecoder="https://github.com/aumosita/GPSLeecoder"
              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

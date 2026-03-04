@@ -11,20 +11,23 @@ struct TrackingMapView: View {
     @State private var showHistory = false
     @State private var fileToShare: URL?
 
+
     @State private var cameraPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var currentCameraDistance: Double = 500  // meters (≈100m scale)
     @State private var hasSetInitialZoom = false
+    @State private var isFollowing = true
+    /// Guards against programmatic camera moves being treated as user drags.
+    @State private var isProgrammaticMove = false
 
     var body: some View {
+        MapReader { proxy in
         ZStack(alignment: .bottom) {
             Map(position: $cameraPosition) {
-                UserAnnotation()
-                // Heading wedge indicator
-                if state.currentHeading >= 0, let loc = state.currentLocation {
-                    Annotation("", coordinate: loc) {
-                        HeadingWedge(heading: state.currentHeading)
-                            .allowsHitTesting(false)
-                    }
+                // Unified location + heading indicator
+                // UserAnnotation always stays visible regardless of camera position
+                UserAnnotation {
+                    DirectionArrow(heading: state.currentHeading)
+                        .allowsHitTesting(false)
                 }
                 if state.coordinates.count > 1 {
                     MapPolyline(coordinates: state.coordinates)
@@ -39,11 +42,20 @@ struct TrackingMapView: View {
             .onMapCameraChange(frequency: .continuous) { context in
                 currentCameraDistance = context.camera.distance
             }
+            .onMapCameraChange(frequency: .onEnd) { _ in
+                if isProgrammaticMove {
+                    isProgrammaticMove = false
+                } else {
+                    // User dragged the map manually → stop following
+                    isFollowing = false
+                }
+            }
 
             if state.isLogging {
                 LiveStatsBar(speed: state.currentSpeed,
                              altitude: state.currentAltitude,
-                             distance: state.totalDistance)
+                             distance: state.totalDistance,
+                             pointCount: state.coordinates.count)
             }
         }
         .safeAreaInset(edge: .top) {
@@ -53,21 +65,34 @@ struct TrackingMapView: View {
             }
         }
         .onAppear {
-            Task { await GPSLogger.shared.requestAuthorization() }
-            let status = CLLocationManager.authorizationStatus()
-            if status == .notDetermined || status == .denied {
+            GPSLogger.shared.requestAuthorization()
+            let status = CLLocationManager().authorizationStatus
+            if status != .authorizedAlways {
                 showOnboarding = true
             }
             // Request a one-time location fix to seed initial map position
-            Task { await GPSLogger.shared.requestInitialLocation() }
+            GPSLogger.shared.requestInitialLocation()
         }
+
         .onReceive(state.$currentLocation.compactMap { $0 }.prefix(1)) { loc in
             guard !hasSetInitialZoom else { return }
             hasSetInitialZoom = true
+            isProgrammaticMove = true
             cameraPosition = .camera(MapCamera(
                 centerCoordinate: loc,
                 distance: 500
             ))
+        }
+        .onChange(of: state.currentLocation) { _, newLoc in
+            guard isFollowing, let loc = newLoc else { return }
+            isProgrammaticMove = true
+            let camera = MapCamera(
+                centerCoordinate: loc,
+                distance: currentCameraDistance
+            )
+            withMapCameraAnimation(.easeInOut(duration: 0.35), proxy) {
+                cameraPosition = .camera(camera)
+            }
         }
         .navigationTitle(state.isLogging ? String(localized: "nav_title_logging") : String(localized: "nav_title_idle"))
         .toolbar {
@@ -85,31 +110,43 @@ struct TrackingMapView: View {
                 }
 
                 Button {
+                    isFollowing = true
+                    isProgrammaticMove = true
                     if let loc = state.currentLocation {
-                        cameraPosition = .camera(MapCamera(
+                        let camera = MapCamera(
                             centerCoordinate: loc,
                             distance: currentCameraDistance
-                        ))
+                        )
+                        withMapCameraAnimation(.easeInOut(duration: 0.5), proxy) {
+                            cameraPosition = .camera(camera)
+                        }
                     } else {
                         cameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
                     }
                 } label: {
-                    Label(String(localized: "button_current_location"), systemImage: "location.circle")
+                    Label(String(localized: "button_current_location"),
+                          systemImage: isFollowing ? "location.circle.fill" : "location.circle")
                 }
 
                 if state.isLogging {
                     Button(role: .destructive) {
-                        Task { await GPSLogger.shared.stopLogging() }
+                        GPSLogger.shared.stopLogging()
                     } label: {
                         Label(String(localized: "button_stop"), systemImage: "stop.circle.fill")
                     }
                 } else {
                     Button {
-                        Task {
-                            let flush = min(max(flushIntervalMinutes, 1), 60)
-                            let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
-                            let recordClamped = max(1, record == 0 ? 20 : record)
-                            await GPSLogger.shared.startLogging(updateInterval: flush, suggestedName: nil, recordIntervalSeconds: recordClamped)
+                        isFollowing = true
+                        let flush = min(max(flushIntervalMinutes, 1), 60)
+                        let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
+                        let recordClamped = max(1, record == 0 ? 30 : record)
+                        let started = GPSLogger.shared.startLogging(
+                            updateInterval: flush,
+                            suggestedName: nil,
+                            recordIntervalSeconds: recordClamped
+                        )
+                        if !started {
+                            showOnboarding = true
                         }
                     } label: {
                         Label(String(localized: "button_start"), systemImage: "record.circle")
@@ -144,6 +181,18 @@ struct TrackingMapView: View {
                 ShareSheetView(activityItems: [url])
             }
         }
+        } // MapReader
+    }
+
+    /// Animate map camera changes smoothly.
+    private func withMapCameraAnimation(
+        _ animation: Animation,
+        _ proxy: MapProxy,
+        body: @escaping () -> Void
+    ) {
+        withAnimation(animation) {
+            body()
+        }
     }
 }
 
@@ -174,6 +223,7 @@ private struct LiveStatsBar: View {
     let speed: Double      // m/s
     let altitude: Double   // m
     let distance: Double   // m
+    let pointCount: Int
 
     var body: some View {
         HStack(spacing: 0) {
@@ -182,6 +232,8 @@ private struct LiveStatsBar: View {
             statItem(icon: "mountain.2", value: altitudeText, label: "m")
             Divider().frame(height: 30)
             statItem(icon: "point.topleft.down.to.point.bottomright.curvepath", value: distanceText, label: distanceUnit)
+            Divider().frame(height: 30)
+            statItem(icon: "mappin.and.ellipse", value: "\(pointCount)", label: "pts")
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 16)
@@ -229,26 +281,70 @@ private struct LiveStatsBar: View {
     }
 }
 
-// MARK: - Heading wedge indicator
-private struct HeadingWedge: View {
-    let heading: Double  // degrees from true north
+// MARK: - Unified direction arrow (position + heading)
+private struct DirectionArrow: View {
+    let heading: Double  // degrees from true north, -1 = unknown
+    @State private var isPulsing = false
 
     var body: some View {
-        Canvas { context, size in
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = min(size.width, size.height) / 2
-            let spreadAngle: Double = 50  // total spread in degrees
-            let startAngle = Angle(degrees: -90 + heading - spreadAngle / 2)
-            let endAngle = Angle(degrees: -90 + heading + spreadAngle / 2)
+        if heading >= 0 {
+            // 3D navigation arrow
+            Canvas { context, size in
+                let cx = size.width / 2
+                let cy = size.height / 2
+                let h = size.height * 0.45  // arrow height from center
+                let w = size.width * 0.28   // half-width at base
+                let notch: CGFloat = h * 0.3 // depth of rear notch
 
-            var path = Path()
-            path.move(to: center)
-            path.addArc(center: center, radius: radius,
-                        startAngle: startAngle, endAngle: endAngle, clockwise: false)
-            path.closeSubpath()
+                // Arrow pointing up (north), rotation handled by .rotationEffect
+                var arrow = Path()
+                arrow.move(to: CGPoint(x: cx, y: cy - h))         // tip
+                arrow.addLine(to: CGPoint(x: cx + w, y: cy + h))  // right base
+                arrow.addLine(to: CGPoint(x: cx, y: cy + h - notch)) // center notch
+                arrow.addLine(to: CGPoint(x: cx - w, y: cy + h))  // left base
+                arrow.closeSubpath()
 
-            context.fill(path, with: .color(.blue.opacity(0.25)))
+                // Shadow for 3D effect
+                var shadow = arrow
+                shadow = shadow.offsetBy(dx: 1, dy: 2)
+                context.fill(shadow, with: .color(.black.opacity(0.2)))
+
+                // Fill with gradient for depth
+                let gradient = Gradient(colors: [
+                    Color(hue: 0.58, saturation: 0.9, brightness: 1.0),  // bright blue
+                    Color(hue: 0.62, saturation: 1.0, brightness: 0.7)   // deep blue
+                ])
+                context.fill(arrow, with: .linearGradient(
+                    gradient,
+                    startPoint: CGPoint(x: cx, y: cy - h),
+                    endPoint: CGPoint(x: cx, y: cy + h)
+                ))
+
+                // White border
+                context.stroke(arrow, with: .color(.white), lineWidth: 1.5)
+            }
+            .frame(width: 36, height: 36)
+            .rotationEffect(.degrees(heading))
+            .animation(.easeInOut(duration: 0.3), value: heading)
+        } else {
+            // Fallback: pulsing blue dot when heading is unknown
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [.blue, .blue.opacity(0.6)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 8
+                    )
+                )
+                .frame(width: 16, height: 16)
+                .overlay(
+                    Circle().stroke(.white, lineWidth: 2.5)
+                )
+                .shadow(color: .blue.opacity(0.4), radius: 6)
+                .scaleEffect(isPulsing ? 1.15 : 1.0)
+                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: isPulsing)
+                .onAppear { isPulsing = true }
         }
-        .frame(width: 80, height: 80)
     }
 }
