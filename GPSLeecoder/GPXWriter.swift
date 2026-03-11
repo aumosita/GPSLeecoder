@@ -154,9 +154,16 @@ final class GPXWriter: @unchecked Sendable {
     }
 
     static func tracksDirectory() throws -> URL {
-        let docs = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let fm = FileManager.default
+        if let containerURL = fm.url(forUbiquityContainerIdentifier: AppConfig.iCloudContainerIdentifier) {
+            let tracksDir = containerURL.appendingPathComponent("Documents/Tracks", isDirectory: true)
+            try fm.createDirectory(at: tracksDir, withIntermediateDirectories: true)
+            return tracksDir
+        }
+        // Fallback: iCloud unavailable (not signed in to iCloud, or simulator)
+        let docs = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let tracksDir = docs.appendingPathComponent("Tracks", isDirectory: true)
-        try FileManager.default.createDirectory(at: tracksDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: tracksDir, withIntermediateDirectories: true)
         return tracksDir
     }
 

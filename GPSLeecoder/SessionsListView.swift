@@ -81,8 +81,7 @@ struct SessionsListView: View {
     private func loadFiles() {
         let fm = FileManager.default
         do {
-            let docs = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
-            let dir = docs.appendingPathComponent("Tracks", isDirectory: true)
+            let dir = try GPXWriter.tracksDirectory()
             let items = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])) ?? []
             let sorted = items.filter { $0.pathExtension.lowercased() == "gpx" }
                 .sorted(by: { (a, b) in
