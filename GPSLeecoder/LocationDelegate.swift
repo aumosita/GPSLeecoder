@@ -9,7 +9,6 @@ final class LocationDelegate: NSObject, CLLocationManagerDelegate {
     var onPause: (() -> Void)?
     var onResume: (() -> Void)?
     var onAuthorizationChange: ((CLAuthorizationStatus) -> Void)?
-    var onDeferredUpdatesFinished: ((Error?) -> Void)?
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         onLocations?(locations)
@@ -33,9 +32,5 @@ final class LocationDelegate: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         onAuthorizationChange?(manager.authorizationStatus)
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFinishDeferredUpdatesWithError error: Error?) {
-        onDeferredUpdatesFinished?(error)
     }
 }

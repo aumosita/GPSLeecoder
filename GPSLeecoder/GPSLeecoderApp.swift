@@ -6,25 +6,29 @@
 //
 
 import SwiftUI
+import UIKit
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // iOS가 위치 이벤트로 앱을 재실행한 경우 → 로깅 자동 재개
+        if launchOptions?[.location] != nil {
+            GPSLogger.shared.resumeLoggingIfNeeded()
+        }
+        return true
+    }
+}
 
 @main
 struct GPSLeecoderApp: App {
-    @Environment(\.scenePhase) private var scenePhase
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
         WindowGroup {
             NavigationStack {
                 TrackingMapView()
-            }
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            switch newPhase {
-            case .active:
-                GPSLogger.shared.applicationDidBecomeActive()
-            case .background:
-                GPSLogger.shared.applicationDidEnterBackground()
-            default:
-                break
             }
         }
     }

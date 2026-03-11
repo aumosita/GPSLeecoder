@@ -50,7 +50,11 @@ final class GPSLogger {
     private var isActivelyLogging: Bool = false
     private var isInBackground = false
     private var pendingStartRequest: PendingStartRequest? = nil
-    private var isDeferringLocationUpdates = false
+
+    // Persistence keys for relaunch recovery
+    private static let kWasLogging = "GPSLogger.wasLogging"
+    private static let kSavedFlushInterval = "GPSLogger.flushInterval"
+    private static let kSavedRecordInterval = "GPSLogger.recordInterval"
 
     // Error recovery
     private var errorRetryCount: Int = 0
@@ -67,6 +71,7 @@ final class GPSLogger {
     private var lastTrueHeading: Double = -1
 
     private var isLocationPaused: Bool = false
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
     private(set) var currentFileURL: URL? = nil
 
@@ -75,11 +80,17 @@ final class GPSLogger {
 
     private init() {
         locationManager.delegate = delegate
-        locationManager.allowsBackgroundLocationUpdates = false
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.activityType = .other
         locationManager.distanceFilter = kCLDistanceFilterNone
+
+        // 백그라운드 위치 지원이 가능하면 초기화 시점부터 활성화
+        if Self.hasBackgroundLocationCapability {
+            locationManager.allowsBackgroundLocationUpdates = true
+            locationManager.showsBackgroundLocationIndicator = true
+        }
+
         locationManager.startUpdatingHeading()
 
         delegate.onLocations = { [weak self] locations in
@@ -101,10 +112,6 @@ final class GPSLogger {
         delegate.onAuthorizationChange = { [weak self] status in
             Task { @MainActor in self?.handleAuthorizationChange(status) }
         }
-        delegate.onDeferredUpdatesFinished = { [weak self] error in
-            Task { @MainActor in self?.handleDeferredUpdatesFinished(error) }
-        }
-
         // NotificationCenter 기반 생명주기 감지 — scenePhase보다 신뢰성 높음
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
@@ -192,6 +199,12 @@ final class GPSLogger {
             configureBackgroundLocationSupport()
             updateDesiredAccuracy()
 
+            // Significant Location Change — iOS 종료 후 앱 재실행의 열쇠
+            locationManager.startMonitoringSignificantLocationChanges()
+
+            // 로깅 상태를 디스크에 저장 (종료 후 복구용)
+            persistLoggingState()
+
             startFlushTimer()
             restoreTrackingModeForCurrentScene()
             return true
@@ -212,9 +225,11 @@ final class GPSLogger {
         stopFlushTimer()
         stopIntermittentTimer()
         stopLocationUpdates()
-        endDeferredUpdatesIfNeeded()
+        endBackgroundTaskIfNeeded()
+        locationManager.stopMonitoringSignificantLocationChanges()
         locationManager.allowsBackgroundLocationUpdates = false
         locationManager.showsBackgroundLocationIndicator = false
+        clearLoggingState()
         do { try gpx.close() } catch { print("Failed to close GPX: \(error)") }
         trackState.isLogging = false
         trackState.currentFileURL = currentFileURL
@@ -226,20 +241,24 @@ final class GPSLogger {
         isLocationPaused = false
         locationManager.pausesLocationUpdatesAutomatically = false
 
+        // 즉시 flush — iOS가 앱을 종료해도 데이터 보존
+        do { try gpx.flush() } catch { print("Background flush error: \(error)") }
+
+        beginBackgroundTaskIfNeeded()
+
         if isIntermittentMode {
             stopIntermittentTimer()
         }
 
         updateDesiredAccuracy()
         startLocationUpdates()
-        beginDeferredUpdatesIfNeeded()
     }
 
     func applicationDidBecomeActive() {
         guard isActivelyLogging else { return }
         isInBackground = false
         isLocationPaused = false
-        endDeferredUpdatesIfNeeded()
+        endBackgroundTaskIfNeeded()
         updateDesiredAccuracy()
         restoreTrackingModeForCurrentScene()
     }
@@ -462,23 +481,28 @@ final class GPSLogger {
             locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
         }
 
-        guard !newCoords.isEmpty else {
-            beginDeferredUpdatesIfNeeded()
-            return
-        }
+        guard !newCoords.isEmpty else { return }
 
         errorRetryCount = 0
 
         let lastCoord = newCoords.last
         trackState.coordinates.append(contentsOf: newCoords)
+
+        // 메모리 보호: 좌표 수가 한계를 넘으면 매 2번째 포인트만 남겨서 절반으로 줄임
+        // (경로 형태는 유지하면서 메모리 사용량 제한)
+        let maxCoordinates = 5000
+        if trackState.coordinates.count > maxCoordinates {
+            let thinned = stride(from: 0, to: trackState.coordinates.count, by: 2)
+                .map { trackState.coordinates[$0] }
+            trackState.coordinates = thinned
+        }
+
         trackState.currentSpeed = lastAcceptedSpeed
         trackState.currentAltitude = lastAcceptedAltitude
         trackState.totalDistance = self.totalDistance
         if let coord = lastCoord {
             trackState.currentLocation = coord
         }
-
-        beginDeferredUpdatesIfNeeded()
     }
 
     // MARK: - Location error recovery
@@ -491,7 +515,12 @@ final class GPSLogger {
 
         switch code {
         case .denied:
-            // User revoked permission — stop logging gracefully
+            // 실제 권한 상태를 재확인하여 오탐지 방지
+            let actual = locationManager.authorizationStatus
+            guard actual == .denied || actual == .restricted else {
+                print("[GPS Recovery] Transient denied error — actual status: \(actual.rawValue), ignoring")
+                return
+            }
             print("[GPS Recovery] Location permission denied — stopping logging")
             stopLogging()
             return
@@ -556,16 +585,6 @@ final class GPSLogger {
         }
     }
 
-    private func handleDeferredUpdatesFinished(_ error: Error?) {
-        isDeferringLocationUpdates = false
-
-        if let error {
-            print("[GPS] Deferred updates ended with error: \(error)")
-        }
-
-        beginDeferredUpdatesIfNeeded()
-    }
-
     private func configureBackgroundLocationSupport() {
         let supportsBackgroundUpdates = Self.hasBackgroundLocationCapability
         locationManager.allowsBackgroundLocationUpdates = supportsBackgroundUpdates
@@ -585,23 +604,24 @@ final class GPSLogger {
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
-    private func beginDeferredUpdatesIfNeeded() {
-        guard isActivelyLogging, isInBackground else { return }
-        guard locationManager.authorizationStatus == .authorizedAlways else { return }
-        guard !isDeferringLocationUpdates else { return }
-        guard CLLocationManager.deferredLocationUpdatesAvailable() else { return }
+    // MARK: - Background task management
 
-        isDeferringLocationUpdates = true
-        locationManager.allowDeferredLocationUpdates(
-            untilTraveled: CLLocationDistanceMax,
-            timeout: TimeInterval(recordIntervalSeconds)
-        )
+    private func beginBackgroundTaskIfNeeded() {
+        guard backgroundTaskID == .invalid else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "GPSLogging") { [weak self] in
+            // Expiration handler — iOS is about to suspend us.
+            // Location updates will continue on their own thanks to allowsBackgroundLocationUpdates,
+            // so just end the background task cleanly.
+            Task { @MainActor in
+                self?.endBackgroundTaskIfNeeded()
+            }
+        }
     }
 
-    private func endDeferredUpdatesIfNeeded() {
-        guard isDeferringLocationUpdates else { return }
-        isDeferringLocationUpdates = false
-        locationManager.disallowDeferredLocationUpdates()
+    private func endBackgroundTaskIfNeeded() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
     }
 
     private func restoreTrackingModeForCurrentScene() {
@@ -611,5 +631,32 @@ final class GPSLogger {
         }
 
         startIntermittentTimer()
+    }
+
+    // MARK: - Relaunch recovery
+
+    /// iOS가 위치 이벤트로 앱을 재실행했을 때 호출. 이전 로깅 상태를 복구한다.
+    func resumeLoggingIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Self.kWasLogging) else { return }
+
+        let flush = defaults.object(forKey: Self.kSavedFlushInterval) as? Int
+        let record = defaults.object(forKey: Self.kSavedRecordInterval) as? Int
+
+        print("[GPS Recovery] App relaunched by iOS — resuming logging")
+        startLogging(updateInterval: flush, recordIntervalSeconds: record)
+    }
+
+    private func persistLoggingState() {
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: Self.kWasLogging)
+        defaults.set(flushIntervalMinutes, forKey: Self.kSavedFlushInterval)
+        defaults.set(recordIntervalSeconds, forKey: Self.kSavedRecordInterval)
+    }
+
+    private func clearLoggingState() {
+        UserDefaults.standard.removeObject(forKey: Self.kWasLogging)
+        UserDefaults.standard.removeObject(forKey: Self.kSavedFlushInterval)
+        UserDefaults.standard.removeObject(forKey: Self.kSavedRecordInterval)
     }
 }

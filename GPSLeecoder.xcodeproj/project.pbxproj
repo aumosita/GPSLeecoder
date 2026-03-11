@@ -252,9 +252,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GPSLeecoder/GPSLeecoder.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6B75UJ3Q3H;
+				DEVELOPMENT_TEAM = S7SX8V3VVC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "June GPS Recorder for Photographers";
@@ -263,14 +264,9 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GPS 트랙 기록을 위해 위치 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = (
-					location,
-				);
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = (
-					gps,
-					"location-services",
-				);
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "gps location-services";
 				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
@@ -300,9 +296,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GPSLeecoder/GPSLeecoder.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6B75UJ3Q3H;
+				DEVELOPMENT_TEAM = S7SX8V3VVC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "June GPS Recorder for Photographers";
@@ -311,14 +308,9 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GPS 트랙 기록을 위해 위치 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = (
-					location,
-				);
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = (
-					gps,
-					"location-services",
-				);
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "gps location-services";
 				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
@@ -353,7 +345,7 @@
 				B6E62BDB2F4AF1F600FE92DD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		B6E62BDC2F4AF1F600FE92DD /* Build configuration list for PBXNativeTarget "GPSLeecoder" */ = {
 			isa = XCConfigurationList;
@@ -362,7 +354,7 @@
 				B6E62BDE2F4AF1F600FE92DD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};
