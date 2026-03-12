@@ -18,124 +18,93 @@ final class TrackState: ObservableObject {
 final class GPSLogger {
     static let shared = GPSLogger()
 
-    private struct PendingStartRequest {
-        let updateInterval: Int?
-        let suggestedName: String?
-        let recordIntervalSeconds: Int?
-    }
-
-    /// Runtime check: does the built Info.plist actually contain UIBackgroundModes = [location]?
-    nonisolated static var hasBackgroundLocationCapability: Bool {
-        guard let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] else {
-            return false
-        }
-        return modes.contains("location")
-    }
-
     private let locationManager = CLLocationManager()
     private let delegate = LocationDelegate()
     private let gpx = GPXWriter()
 
-    private var flushIntervalMinutes: Int = AppConfig.defaultFlushIntervalMinutes
-    private var recordIntervalSeconds: Int = 30
-    private var lastSavedLocationTime: Date? = nil
-    private var flushTask: Task<Void, Never>? = nil
+    // MARK: - State
+
+    private var isRecording = false
+    private var lastAcceptedTime: Date?
+    private var lastFlushTime: Date?
+    private var lastLocation: CLLocation?
+    private var totalDistance: Double = 0
+    private var lastTrueHeading: Double = -1
 
     private var saveMode: SaveMode = .daily
-    private var isIntermittentMode: Bool = false
-    private var intermittentTimer: Task<Void, Never>? = nil
-    /// When in intermittent mode, this flag indicates we are waiting for a single location fix.
-    private var waitingForFix: Bool = false
-    private var fixTimeoutTask: Task<Void, Never>? = nil
-    private var isActivelyLogging: Bool = false
-    private var isInBackground = false
-    private var pendingStartRequest: PendingStartRequest? = nil
+    private var flushIntervalSeconds: TimeInterval = TimeInterval(AppConfig.defaultFlushIntervalMinutes * 60)
+    private var recordIntervalSeconds: Int = AppConfig.defaultRecordIntervalSeconds
+    private var distanceFilterMeters: Double = Double(AppConfig.defaultDistanceFilterMeters)
+    private var accuracyFilterMeters: Double = Double(AppConfig.defaultAccuracyFilterMeters)
+
+    private var skipLogCounter: Int = 0
 
     // Persistence keys for relaunch recovery
     private static let kWasLogging = "GPSLogger.wasLogging"
     private static let kSavedFlushInterval = "GPSLogger.flushInterval"
     private static let kSavedRecordInterval = "GPSLogger.recordInterval"
 
-    // Error recovery
-    private var errorRetryCount: Int = 0
-    private static let maxErrorRetries = 10
-    private var errorRetryTask: Task<Void, Never>? = nil
-
-    private var distanceFilterMeters: Double = 10  // default 10m
-    private var accuracyFilterMeters: Double = 100  // default 100m
-
-    private var lastLocation: CLLocation? = nil
-    private var totalDistance: Double = 0
-    private var lastAcceptedSpeed: Double = 0
-    private var lastAcceptedAltitude: Double = 0
-    private var lastTrueHeading: Double = -1
-
-    private var isLocationPaused: Bool = false
-    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
-
     private(set) var currentFileURL: URL? = nil
 
-    // Shared UI state (published on main thread)
+    // Shared UI state
     let trackState = TrackState()
+
+    // MARK: - Init
 
     private init() {
         locationManager.delegate = delegate
-        locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.activityType = .other
         locationManager.distanceFilter = kCLDistanceFilterNone
-
-        // 백그라운드 위치 지원이 가능하면 초기화 시점부터 활성화
-        if Self.hasBackgroundLocationCapability {
-            locationManager.allowsBackgroundLocationUpdates = true
-            locationManager.showsBackgroundLocationIndicator = true
-        }
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.headingFilter = kCLHeadingFilterNone
+        locationManager.activityType = .other
 
         locationManager.startUpdatingHeading()
 
         delegate.onLocations = { [weak self] locations in
-            Task { @MainActor in self?.handleLocations(locations) }
+            MainActor.assumeIsolated { self?.handleLocations(locations) }
         }
         delegate.onHeading = { [weak self] heading in
-            Task { @MainActor in self?.handleHeading(heading) }
+            MainActor.assumeIsolated { self?.handleHeading(heading) }
         }
         delegate.onError = { [weak self] error in
-            print("Location error: \(error)")
-            Task { @MainActor in self?.handleLocationError(error) }
-        }
-        delegate.onPause = { [weak self] in
-            Task { @MainActor in self?.handleLocationPause() }
-        }
-        delegate.onResume = { [weak self] in
-            Task { @MainActor in self?.handleLocationResume() }
+            MainActor.assumeIsolated { self?.handleLocationError(error) }
         }
         delegate.onAuthorizationChange = { [weak self] status in
-            Task { @MainActor in self?.handleAuthorizationChange(status) }
+            MainActor.assumeIsolated { self?.handleAuthorizationChange(status) }
         }
-        // NotificationCenter 기반 생명주기 감지 — scenePhase보다 신뢰성 높음
+
+        // 백그라운드 진입 시 flush
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.applicationDidEnterBackground() }
+            MainActor.assumeIsolated {
+                guard let self, self.isRecording else { return }
+                DiagLog.log("BACKGROUND — points=\(self.trackState.coordinates.count)")
+                do { try self.gpx.flush() } catch {
+                    DiagLog.log("Background flush error: \(error)")
+                }
+            }
         }
+
         NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.applicationDidBecomeActive() }
+            MainActor.assumeIsolated {
+                guard let self, self.isRecording else { return }
+                DiagLog.log("FOREGROUND — points=\(self.trackState.coordinates.count)")
+            }
         }
     }
+
+    // MARK: - Public API
 
     func requestAuthorization() {
         if locationManager.authorizationStatus == .notDetermined {
             locationManager.requestWhenInUseAuthorization()
         }
-    }
-
-    /// Request a one-time location fix to seed the initial map position.
-    func requestInitialLocation() {
-        locationManager.requestLocation()
     }
 
     func requestAlwaysAuthorization() {
@@ -147,246 +116,98 @@ final class GPSLogger {
         }
     }
 
+    func requestInitialLocation() {
+        locationManager.requestLocation()
+    }
+
     @discardableResult
-    func startLogging(updateInterval: Int? = nil, suggestedName: String? = nil, recordIntervalSeconds: Int? = nil) -> Bool {
+    func startLogging(flushInterval: Int? = nil, recordInterval: Int? = nil) -> Bool {
         let status = locationManager.authorizationStatus
         guard status == .authorizedAlways else {
-            pendingStartRequest = PendingStartRequest(
-                updateInterval: updateInterval,
-                suggestedName: suggestedName,
-                recordIntervalSeconds: recordIntervalSeconds
-            )
             requestAlwaysAuthorization()
             return false
         }
 
-        if let interval = updateInterval { flushIntervalMinutes = max(1, interval) }
-        if let record = recordIntervalSeconds { self.recordIntervalSeconds = max(1, record) }
+        // Apply settings
+        if let f = flushInterval { flushIntervalSeconds = TimeInterval(max(1, f)) * 60 }
+        if let r = recordInterval { recordIntervalSeconds = max(1, r) }
 
-        // Read save mode from UserDefaults
         let modeRaw = UserDefaults.standard.string(forKey: "saveMode") ?? SaveMode.daily.rawValue
-        saveMode = SaveMode(rawValue: modeRaw) ?? .session
+        saveMode = SaveMode(rawValue: modeRaw) ?? .daily
 
-        // Determine GPS power mode
-        isIntermittentMode = self.recordIntervalSeconds >= AppConfig.intermittentGPSThreshold
-
-        // Read filter settings (use defaults if not explicitly set)
-        let distRaw = UserDefaults.standard.object(forKey: "distanceFilterMeters") as? Int ?? 10
+        let distRaw = UserDefaults.standard.object(forKey: "distanceFilterMeters") as? Int
+                      ?? AppConfig.defaultDistanceFilterMeters
         distanceFilterMeters = Double(distRaw)
-        let accRaw = UserDefaults.standard.object(forKey: "accuracyFilterMeters") as? Int ?? 100
-        accuracyFilterMeters = Double(accRaw)
 
-        // Apply distance filter to CLLocationManager
-        locationManager.distanceFilter = distanceFilterMeters > 0 ? distanceFilterMeters : kCLDistanceFilterNone
+        let accRaw = UserDefaults.standard.object(forKey: "accuracyFilterMeters") as? Int
+                     ?? AppConfig.defaultAccuracyFilterMeters
+        accuracyFilterMeters = Double(accRaw)
 
         do {
             if saveMode == .daily {
                 try gpx.startNewFileForDate(Date())
             } else {
-                try gpx.startNewFile(suggestedName: suggestedName)
+                try gpx.startNewFile()
             }
             currentFileURL = gpx.fileURL
-            lastSavedLocationTime = nil
+
+            // Reset state
+            lastAcceptedTime = nil
+            lastFlushTime = Date()
+            lastLocation = nil
+            totalDistance = 0
+            skipLogCounter = 0
+            isRecording = true
+
             trackState.coordinates = []
             trackState.isLogging = true
             trackState.currentFileURL = currentFileURL
-            isActivelyLogging = true
-            isInBackground = UIApplication.shared.applicationState != .active
-            lastLocation = nil
-            totalDistance = 0
-            pendingStartRequest = nil
 
-            configureBackgroundLocationSupport()
-            updateDesiredAccuracy()
-
-            // Significant Location Change — iOS 종료 후 앱 재실행의 열쇠
+            locationManager.allowsBackgroundLocationUpdates = true
+            locationManager.showsBackgroundLocationIndicator = true
+            locationManager.startUpdatingLocation()
             locationManager.startMonitoringSignificantLocationChanges()
 
-            // 로깅 상태를 디스크에 저장 (종료 후 복구용)
             persistLoggingState()
 
-            startFlushTimer()
-            restoreTrackingModeForCurrentScene()
+            DiagLog.log("START — mode=\(saveMode) record=\(recordIntervalSeconds)s flush=\(Int(flushIntervalSeconds/60))m dist=\(distanceFilterMeters)m acc=\(accuracyFilterMeters)m file=\(gpx.fileURL?.lastPathComponent ?? "nil")")
             return true
         } catch {
-            print("Failed to start logging: \(error)")
+            DiagLog.log("Failed to start logging: \(error)")
             return false
         }
     }
 
     func stopLogging() {
-        isActivelyLogging = false
-        isInBackground = false
-        isLocationPaused = false
-        errorRetryCount = 0
-        errorRetryTask?.cancel()
-        errorRetryTask = nil
-        pendingStartRequest = nil
-        stopFlushTimer()
-        stopIntermittentTimer()
-        stopLocationUpdates()
-        endBackgroundTaskIfNeeded()
+        guard isRecording else { return }
+        DiagLog.log("STOP — points=\(trackState.coordinates.count) dist=\(String(format: "%.0f", totalDistance))m")
+
+        isRecording = false
+        locationManager.stopUpdatingLocation()
         locationManager.stopMonitoringSignificantLocationChanges()
-        locationManager.allowsBackgroundLocationUpdates = false
-        locationManager.showsBackgroundLocationIndicator = false
         clearLoggingState()
-        do { try gpx.close() } catch { print("Failed to close GPX: \(error)") }
+
+        do { try gpx.close() } catch {
+            DiagLog.log("Failed to close GPX: \(error)")
+        }
+
         trackState.isLogging = false
         trackState.currentFileURL = currentFileURL
     }
 
-    func applicationDidEnterBackground() {
-        guard isActivelyLogging else { return }
-        isInBackground = true
-        isLocationPaused = false
-        locationManager.pausesLocationUpdatesAutomatically = false
+    /// iOS가 위치 이벤트로 앱을 재실행했을 때 호출
+    func resumeLoggingIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Self.kWasLogging) else { return }
 
-        // 즉시 flush — iOS가 앱을 종료해도 데이터 보존
-        do { try gpx.flush() } catch { print("Background flush error: \(error)") }
+        let flush = defaults.object(forKey: Self.kSavedFlushInterval) as? Int
+        let record = defaults.object(forKey: Self.kSavedRecordInterval) as? Int
 
-        beginBackgroundTaskIfNeeded()
-
-        if isIntermittentMode {
-            stopIntermittentTimer()
-        }
-
-        updateDesiredAccuracy()
-        startLocationUpdates()
-    }
-
-    func applicationDidBecomeActive() {
-        guard isActivelyLogging else { return }
-        isInBackground = false
-        isLocationPaused = false
-        endBackgroundTaskIfNeeded()
-        updateDesiredAccuracy()
-        restoreTrackingModeForCurrentScene()
-    }
-
-    // MARK: - Continuous GPS mode
-
-    private func startLocationUpdates() {
-        let status = locationManager.authorizationStatus
-        switch status {
-        case .authorizedAlways:
-            configureBackgroundLocationSupport()
-            updateDesiredAccuracy()
-            locationManager.startUpdatingLocation()
-        case .authorizedWhenInUse, .notDetermined:
-            requestAlwaysAuthorization()
-        default:
-            break
-        }
-    }
-
-    private func stopLocationUpdates() {
-        locationManager.stopUpdatingLocation()
-    }
-
-    // MARK: - Intermittent GPS mode
-
-    private func startIntermittentTimer() {
-        stopIntermittentTimer()
-        locationManager.stopUpdatingLocation()
-
-        // Fire once immediately, then repeat at interval while the app is active.
-        requestSingleFix()
-        intermittentTimer = Task { [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(self.recordIntervalSeconds) * 1_000_000_000)
-                guard !Task.isCancelled else { break }
-                self.requestSingleFix()
-            }
-        }
-    }
-
-    private func stopIntermittentTimer() {
-        intermittentTimer?.cancel()
-        intermittentTimer = nil
-        waitingForFix = false
-        cancelFixTimeout()
-    }
-
-    private func requestSingleFix() {
-        waitingForFix = true
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.startUpdatingLocation()
-        startFixTimeout()
-    }
-
-    /// Timeout for intermittent fix: if no valid location within 30s, restart location manager.
-    private func startFixTimeout() {
-        cancelFixTimeout()
-        fixTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard let self, self.waitingForFix else { return }
-            print("[GPS Recovery] Fix timeout — restarting location manager")
-            self.locationManager.stopUpdatingLocation()
-            try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            self.locationManager.startUpdatingLocation()
-        }
-    }
-
-    private func cancelFixTimeout() {
-        fixTimeoutTask?.cancel()
-        fixTimeoutTask = nil
-    }
-
-    // MARK: - Flush timer
-
-    private func startFlushTimer() {
-        stopFlushTimer()
-        flushTask = Task { [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(self.flushIntervalMinutes) * 60 * 1_000_000_000)
-                do { try self.gpx.flush() } catch { print("Flush error: \(error)") }
-
-                // Upload latest location + GPX file to Dropbox (fire-and-forget)
-                if DropboxUploader.isConfigured,
-                   let coord = self.trackState.currentLocation {
-                    let alt = self.lastAcceptedAltitude
-                    let gpxURL = self.currentFileURL
-                    Task.detached {
-                        await DropboxUploader.uploadLocation(
-                            coordinate: coord,
-                            altitude: alt,
-                            timestamp: Date()
-                        )
-                        if let gpxURL {
-                            await DropboxUploader.uploadFile(localURL: gpxURL)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func stopFlushTimer() {
-        flushTask?.cancel()
-        flushTask = nil
+        DiagLog.log("App relaunched by iOS — resuming logging")
+        startLogging(flushInterval: flush, recordInterval: record)
     }
 
     // MARK: - Handlers
-
-    private func handleLocationPause() {
-        guard isActivelyLogging else { return }
-        isLocationPaused = true
-        print("[GPS] Location updates paused by iOS")
-        // iOS가 위치 업데이트를 일시 중지했으므로 즉시 재시작
-        print("[GPS Recovery] Auto-resuming paused location updates")
-        locationManager.startUpdatingLocation()
-        isLocationPaused = false
-    }
-
-    private func handleLocationResume() {
-        guard isActivelyLogging else { return }
-        isLocationPaused = false
-        print("[GPS] Location updates resumed")
-    }
 
     private func handleHeading(_ heading: CLHeading) {
         let h = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
@@ -395,7 +216,13 @@ final class GPSLogger {
     }
 
     private func handleLocations(_ locations: [CLLocation]) {
-        guard !locations.isEmpty else { return }
+        guard isRecording, !locations.isEmpty else {
+            // 기록 중이 아니어도 현재 위치는 업데이트 (초기 위치 표시용)
+            if !isRecording, let loc = locations.last {
+                trackState.currentLocation = loc.coordinate
+            }
+            return
+        }
 
         var newCoords: [CLLocationCoordinate2D] = []
         let ordered = locations.sorted { $0.timestamp < $1.timestamp }
@@ -406,90 +233,93 @@ final class GPSLogger {
                 let cal = Calendar.current
                 let locDay = cal.dateComponents([.year, .month, .day], from: loc.timestamp)
                 if let currentDay = gpx.currentFileDate, currentDay != locDay {
-                    // Date changed — rotate file
-                    let previousURL = gpx.fileURL
                     do {
                         try gpx.close()
                         try gpx.startNewFileForDate(loc.timestamp)
                         currentFileURL = gpx.fileURL
                         trackState.currentFileURL = currentFileURL
+                        DiagLog.log("Daily file rotated → \(gpx.fileURL?.lastPathComponent ?? "nil")")
                     } catch {
-                        print("Date rotation error: \(error) — attempting fallback")
-                        // Fallback: try to reopen the previous file
-                        if let prev = previousURL {
-                            do {
-                                try gpx.startNewFileForDate(Date().addingTimeInterval(-86400))
-                                currentFileURL = gpx.fileURL
-                                trackState.currentFileURL = currentFileURL
-                                print("[Fallback] Reopened previous daily file")
-                            } catch {
-                                print("[Fallback] Failed to reopen previous file: \(error)")
-                            }
-                        }
+                        DiagLog.log("Date rotation error: \(error)")
                     }
                 }
             }
 
-            // Preserve the requested save interval even when intermittent mode falls back
-            // to continuous updates in the background.
-            if !isIntermittentMode || isInBackground {
-                if let last = lastSavedLocationTime {
-                    if loc.timestamp.timeIntervalSince(last) < TimeInterval(recordIntervalSeconds) {
-                        continue
+            // Time filter
+            if let last = lastAcceptedTime {
+                let elapsed = loc.timestamp.timeIntervalSince(last)
+                if elapsed < TimeInterval(recordIntervalSeconds) {
+                    skipLogCounter += 1
+                    if skipLogCounter % 30 == 1 {
+                        DiagLog.log("SKIP interval: \(String(format: "%.1f", elapsed))s<\(recordIntervalSeconds)s ha=\(String(format: "%.0f", loc.horizontalAccuracy))m x\(skipLogCounter)")
                     }
+                    continue
                 }
             }
 
-            // Accuracy filter: drop locations with poor GPS accuracy
+            // Accuracy filter
             if accuracyFilterMeters > 0 && loc.horizontalAccuracy > accuracyFilterMeters {
+                skipLogCounter += 1
+                if skipLogCounter % 30 == 1 {
+                    DiagLog.log("SKIP accuracy: \(String(format: "%.0f", loc.horizontalAccuracy))m>\(String(format: "%.0f", accuracyFilterMeters))m x\(skipLogCounter)")
+                }
                 continue
             }
 
-            do {
-                try gpx.append(location: loc, heading: lastTrueHeading)
-            } catch {
-                print("Append error: \(error) — attempting file handle recovery")
-                // Attempt to recover the file handle
-                if let url = gpx.fileURL {
-                    do {
-                        try gpx.recoverFileHandle(at: url)
-                        try gpx.append(location: loc, heading: lastTrueHeading)
-                        print("[Recovery] File handle recovered successfully")
-                    } catch {
-                        print("[Recovery] Failed: \(error)")
+            // Distance filter
+            if distanceFilterMeters > 0, let prev = lastLocation {
+                let dist = loc.distance(from: prev)
+                if dist < distanceFilterMeters {
+                    skipLogCounter += 1
+                    if skipLogCounter % 30 == 1 {
+                        DiagLog.log("SKIP distance: \(String(format: "%.1f", dist))m<\(String(format: "%.0f", distanceFilterMeters))m x\(skipLogCounter)")
                     }
+                    continue
                 }
             }
 
-            // Compute distance
+            // Write point
+            do {
+                try gpx.append(location: loc, heading: lastTrueHeading)
+            } catch {
+                DiagLog.log("Append error: \(error)")
+                continue
+            }
+
+            // Flush check (skip if interval is 0 = disabled)
+            if flushIntervalSeconds > 0,
+               let flushTime = lastFlushTime,
+               Date().timeIntervalSince(flushTime) >= flushIntervalSeconds {
+                do {
+                    try gpx.flush()
+                    lastFlushTime = Date()
+                    DiagLog.log("FLUSH — points=\(trackState.coordinates.count + newCoords.count)")
+                } catch {
+                    DiagLog.log("Flush error: \(error)")
+                }
+            }
+
+            // Update tracking state
             if let prev = lastLocation {
                 totalDistance += loc.distance(from: prev)
             }
             lastLocation = loc
-            lastAcceptedSpeed = loc.speed
-            lastAcceptedAltitude = loc.altitude
-
-            lastSavedLocationTime = loc.timestamp
+            lastAcceptedTime = loc.timestamp
+            skipLogCounter = 0
             newCoords.append(loc.coordinate)
-        }
-
-        // In intermittent mode, lower GPS accuracy after getting a fix
-        // (keep GPS alive at low power to prevent iOS from suspending the app)
-        if isIntermittentMode && !isInBackground && waitingForFix && !newCoords.isEmpty {
-            waitingForFix = false
-            cancelFixTimeout()
-            locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
         }
 
         guard !newCoords.isEmpty else { return }
 
-        errorRetryCount = 0
+        // Log every 10th point
+        if trackState.coordinates.count % 10 < newCoords.count || trackState.coordinates.isEmpty {
+            DiagLog.log("POINT +\(newCoords.count) total=\(trackState.coordinates.count + newCoords.count)")
+        }
 
         let lastCoord = newCoords.last
         trackState.coordinates.append(contentsOf: newCoords)
 
-        // 메모리 보호: 좌표 수가 한계를 넘으면 매 2번째 포인트만 남겨서 절반으로 줄임
-        // (경로 형태는 유지하면서 메모리 사용량 제한)
+        // Memory protection: thin coordinates when exceeding limit
         let maxCoordinates = 5000
         if trackState.coordinates.count > maxCoordinates {
             let thinned = stride(from: 0, to: trackState.coordinates.count, by: 2)
@@ -497,160 +327,59 @@ final class GPSLogger {
             trackState.coordinates = thinned
         }
 
-        trackState.currentSpeed = lastAcceptedSpeed
-        trackState.currentAltitude = lastAcceptedAltitude
-        trackState.totalDistance = self.totalDistance
+        if let loc = ordered.last {
+            trackState.currentSpeed = loc.speed
+            trackState.currentAltitude = loc.altitude
+        }
+        trackState.totalDistance = totalDistance
         if let coord = lastCoord {
             trackState.currentLocation = coord
         }
     }
 
-    // MARK: - Location error recovery
+    // MARK: - Error handling
 
     private func handleLocationError(_ error: Error) {
-        guard isActivelyLogging else { return }
+        guard isRecording else { return }
 
         let clError = error as? CLError
         let code = clError?.code ?? .locationUnknown
 
-        switch code {
-        case .denied:
-            // 실제 권한 상태를 재확인하여 오탐지 방지
+        if code == .denied {
             let actual = locationManager.authorizationStatus
             guard actual == .denied || actual == .restricted else {
-                print("[GPS Recovery] Transient denied error — actual status: \(actual.rawValue), ignoring")
+                DiagLog.log("Transient denied error — actual status: \(actual.rawValue), ignoring")
                 return
             }
-            print("[GPS Recovery] Location permission denied — stopping logging")
+            DiagLog.log("Location permission denied — stopping")
             stopLogging()
             return
-
-        case .locationUnknown, .network:
-            // Transient errors — retry with backoff
-            errorRetryCount += 1
-            if errorRetryCount > Self.maxErrorRetries {
-                print("[GPS Recovery] Max retries (\(Self.maxErrorRetries)) reached — resetting counter and restarting")
-                errorRetryCount = 0
-            }
-
-            // Exponential backoff: 2, 4, 8 … capped at 30 seconds
-            let delay = min(30.0, pow(2.0, Double(errorRetryCount)))
-            print("[GPS Recovery] Retry #\(errorRetryCount) in \(delay)s (code: \(code.rawValue))")
-
-            errorRetryTask?.cancel()
-            errorRetryTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                guard !Task.isCancelled, let self, self.isActivelyLogging else { return }
-
-                // Restart location updates
-                self.locationManager.stopUpdatingLocation()
-                self.locationManager.startUpdatingLocation()
-                print("[GPS Recovery] Location manager restarted")
-            }
-
-        default:
-            // Other errors — log and do a simple retry
-            print("[GPS Recovery] Unhandled error code \(code.rawValue) — attempting restart")
-            locationManager.stopUpdatingLocation()
-            locationManager.startUpdatingLocation()
         }
+
+        // All other errors: just log. CLLocationManager retries automatically.
+        DiagLog.log("ERROR code=\(code.rawValue) \(error.localizedDescription)")
     }
 
     private func handleAuthorizationChange(_ status: CLAuthorizationStatus) {
         switch status {
         case .authorizedAlways:
-            if isActivelyLogging {
-                configureBackgroundLocationSupport()
-                updateDesiredAccuracy()
-                restoreTrackingModeForCurrentScene()
-            } else if let pending = pendingStartRequest {
-                pendingStartRequest = nil
-                _ = startLogging(
-                    updateInterval: pending.updateInterval,
-                    suggestedName: pending.suggestedName,
-                    recordIntervalSeconds: pending.recordIntervalSeconds
-                )
-            }
+            // Nothing to do — location updates continue automatically
+            break
         case .authorizedWhenInUse:
-            if pendingStartRequest != nil {
-                locationManager.requestAlwaysAuthorization()
-            }
+            locationManager.requestAlwaysAuthorization()
         case .denied, .restricted:
-            pendingStartRequest = nil
-            if isActivelyLogging {
-                stopLogging()
-            }
+            if isRecording { stopLogging() }
         default:
             break
         }
     }
 
-    private func configureBackgroundLocationSupport() {
-        let supportsBackgroundUpdates = Self.hasBackgroundLocationCapability
-        locationManager.allowsBackgroundLocationUpdates = supportsBackgroundUpdates
-        locationManager.showsBackgroundLocationIndicator = supportsBackgroundUpdates
-    }
-
-    private func updateDesiredAccuracy() {
-        if isInBackground && isIntermittentMode {
-            let backgroundAccuracy = max(
-                accuracyFilterMeters > 0 ? accuracyFilterMeters : kCLLocationAccuracyNearestTenMeters,
-                kCLLocationAccuracyNearestTenMeters
-            )
-            locationManager.desiredAccuracy = backgroundAccuracy
-            return
-        }
-
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
-    }
-
-    // MARK: - Background task management
-
-    private func beginBackgroundTaskIfNeeded() {
-        guard backgroundTaskID == .invalid else { return }
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "GPSLogging") { [weak self] in
-            // Expiration handler — iOS is about to suspend us.
-            // Location updates will continue on their own thanks to allowsBackgroundLocationUpdates,
-            // so just end the background task cleanly.
-            Task { @MainActor in
-                self?.endBackgroundTaskIfNeeded()
-            }
-        }
-    }
-
-    private func endBackgroundTaskIfNeeded() {
-        guard backgroundTaskID != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(backgroundTaskID)
-        backgroundTaskID = .invalid
-    }
-
-    private func restoreTrackingModeForCurrentScene() {
-        if isInBackground || !isIntermittentMode {
-            startLocationUpdates()
-            return
-        }
-
-        startIntermittentTimer()
-    }
-
-    // MARK: - Relaunch recovery
-
-    /// iOS가 위치 이벤트로 앱을 재실행했을 때 호출. 이전 로깅 상태를 복구한다.
-    func resumeLoggingIfNeeded() {
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: Self.kWasLogging) else { return }
-
-        let flush = defaults.object(forKey: Self.kSavedFlushInterval) as? Int
-        let record = defaults.object(forKey: Self.kSavedRecordInterval) as? Int
-
-        print("[GPS Recovery] App relaunched by iOS — resuming logging")
-        startLogging(updateInterval: flush, recordIntervalSeconds: record)
-    }
+    // MARK: - Persistence
 
     private func persistLoggingState() {
         let defaults = UserDefaults.standard
         defaults.set(true, forKey: Self.kWasLogging)
-        defaults.set(flushIntervalMinutes, forKey: Self.kSavedFlushInterval)
+        defaults.set(Int(flushIntervalSeconds / 60), forKey: Self.kSavedFlushInterval)
         defaults.set(recordIntervalSeconds, forKey: Self.kSavedRecordInterval)
     }
 

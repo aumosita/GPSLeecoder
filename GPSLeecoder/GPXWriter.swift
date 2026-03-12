@@ -10,12 +10,52 @@ final class GPXWriter: @unchecked Sendable {
     /// The calendar-day component of the currently open file (used for daily rotation).
     private(set) var currentFileDate: DateComponents?
 
+    // MARK: - iCloud container (cached)
+
+    private static var _cachedContainerURL: URL?
+
+    /// 앱 시작 시 호출 — async/await로 백그라운드에서 iCloud container를 초기화한다.
+    static func resolveICloudContainer() async -> URL? {
+        if let cached = _cachedContainerURL { return cached }
+
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let fm = FileManager.default
+                let token = fm.ubiquityIdentityToken
+                DiagLog.log("[iCloud] ubiquityIdentityToken: \(token != nil ? "present" : "nil")")
+
+                guard token != nil else {
+                    DiagLog.log("[iCloud] 사용자가 iCloud에 로그인하지 않았거나 iCloud Drive가 비활성화됨")
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let id = AppConfig.iCloudContainerIdentifier
+                DiagLog.log("[iCloud] Requesting container: \(id)")
+
+                if let url = fm.url(forUbiquityContainerIdentifier: id) {
+                    DiagLog.log("[iCloud] Container URL: \(url.path)")
+                    let tracksDir = url.appendingPathComponent("Documents/Tracks", isDirectory: true)
+                    do {
+                        try fm.createDirectory(at: tracksDir, withIntermediateDirectories: true)
+                        DiagLog.log("[iCloud] Tracks directory ready: \(tracksDir.path)")
+                    } catch {
+                        DiagLog.log("[iCloud] Failed to create Tracks directory: \(error)")
+                    }
+                    _cachedContainerURL = url
+                    continuation.resume(returning: url)
+                } else {
+                    DiagLog.log("[iCloud] url(forUbiquityContainerIdentifier:) returned nil for \(id)")
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
     init() {}
 
     // MARK: - Session mode
 
-    /// Creates a new GPX file under the iCloud ubiquity container and writes the header and opening tags.
-    /// - Parameter suggestedName: Optional suggested base name (without extension). If nil, a timestamped name is used.
     func startNewFile(suggestedName: String? = nil) throws {
         let tracksDir = try Self.tracksDirectory()
         let base: String
@@ -31,24 +71,18 @@ final class GPXWriter: @unchecked Sendable {
 
     // MARK: - Daily mode
 
-    /// Opens (or resumes) a GPX file named after the given date, e.g. `2026-02-22.gpx`.
-    /// If the file already exists (from a previous session), it reopens and appends a new track segment.
     func startNewFileForDate(_ date: Date) throws {
         let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month, .day], from: date)
-        // If the file for this date is already open, do nothing.
         if let current = currentFileDate, current == comps, fileHandle != nil { return }
-        // Close any previously open file first.
         try close()
         let tracksDir = try Self.tracksDirectory()
         let base = Self.dailyDateFormatter.string(from: date)
         let url = tracksDir.appendingPathComponent("\(base).gpx")
 
         if fileManager.fileExists(atPath: url.path) {
-            // Reopen existing daily file — append a new track segment
             try reopenExistingFile(at: url)
         } else {
-            // Create a brand-new file (no -1 suffix for daily mode)
             fileManager.createFile(atPath: url.path, contents: nil)
             let handle = try FileHandle(forWritingTo: url)
             self.fileHandle = handle
@@ -61,20 +95,20 @@ final class GPXWriter: @unchecked Sendable {
 
     // MARK: - Writing
 
-    /// Appends a single track point to the open GPX file.
     func append(location: CLLocation, heading: Double? = nil) throws {
-        guard let handle = fileHandle else { throw NSError(domain: "GPXWriter", code: 2, userInfo: [NSLocalizedDescriptionKey: "File not open"]) }
+        guard let handle = fileHandle else {
+            throw NSError(domain: "GPXWriter", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "File not open"])
+        }
         let point = Self.gpxTrackPoint(for: location, heading: heading)
         try handle.write(contentsOf: Data(point.utf8))
         try handle.write(contentsOf: Data("\n".utf8))
     }
 
-    /// Flushes the file data to disk. Coordinator-friendly flush can be added later if needed.
     func flush() throws {
         try fileHandle?.synchronize()
     }
 
-    /// Closes the GPX file by writing closing tags and closing the handle.
     func close() throws {
         guard let handle = fileHandle else { return }
         try handle.write(contentsOf: Data("  </trkseg>\n</trk>\n</gpx>\n".utf8))
@@ -83,28 +117,8 @@ final class GPXWriter: @unchecked Sendable {
         currentFileDate = nil
     }
 
-    /// Attempts to recover a file handle by reopening the file at the end.
-    /// Used when the handle becomes invalid during recording.
-    func recoverFileHandle(at url: URL) throws {
-        // Close existing handle if any
-        try? fileHandle?.close()
-        fileHandle = nil
-
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw NSError(domain: "GPXWriter", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(url.lastPathComponent)"])
-        }
-
-        let handle = try FileHandle(forWritingTo: url)
-        try handle.seekToEnd()
-        self.fileHandle = handle
-        self.fileURL = url
-        print("[GPXWriter] File handle recovered for \(url.lastPathComponent)")
-    }
-
     // MARK: - Private helpers
 
-    /// Opens a new file (session mode). Adds a numeric suffix if the file already exists.
     private func openNewFile(at url: URL, baseName: String, in tracksDir: URL) throws {
         var finalURL = url
         var suffix = 1
@@ -123,44 +137,52 @@ final class GPXWriter: @unchecked Sendable {
         try handle.write(contentsOf: Data("\n<trk>\n  <name>Track</name>\n  <trkseg>\n".utf8))
     }
 
-    /// Reopens an existing daily GPX file, strips closing tags, and starts a new track segment.
     private func reopenExistingFile(at url: URL) throws {
         let handle = try FileHandle(forUpdating: url)
         let closingTag = "  </trkseg>\n</trk>\n</gpx>\n"
         let closingTagBytes = closingTag.utf8.count
 
-        // Seek to end and check if file ends with the closing tags
         let fileSize = try handle.seekToEnd()
         if fileSize >= closingTagBytes {
             try handle.seek(toOffset: fileSize - UInt64(closingTagBytes))
             let tailData = try handle.read(upToCount: closingTagBytes) ?? Data()
             if String(data: tailData, encoding: .utf8) == closingTag {
-                // Truncate to remove closing tags
                 try handle.truncate(atOffset: fileSize - UInt64(closingTagBytes))
                 try handle.seekToEnd()
             } else {
-                // Closing tags not found — just seek to end
                 try handle.seekToEnd()
             }
         } else {
             try handle.seekToEnd()
         }
 
-        // Start a new track segment
         try handle.write(contentsOf: Data("  </trkseg>\n  <trkseg>\n".utf8))
 
         self.fileHandle = handle
         self.fileURL = url
     }
 
+    /// 캐시된 iCloud container URL을 사용하고, 없으면 로컬 폴백.
     static func tracksDirectory() throws -> URL {
         let fm = FileManager.default
-        if let containerURL = fm.url(forUbiquityContainerIdentifier: AppConfig.iCloudContainerIdentifier) {
+
+        if let containerURL = _cachedContainerURL {
             let tracksDir = containerURL.appendingPathComponent("Documents/Tracks", isDirectory: true)
             try fm.createDirectory(at: tracksDir, withIntermediateDirectories: true)
             return tracksDir
         }
-        // Fallback: iCloud unavailable (not signed in to iCloud, or simulator)
+
+        // 캐시가 없으면 동기 호출 시도 (초기화 전에 로깅 시작한 경우)
+        if let containerURL = fm.url(forUbiquityContainerIdentifier: AppConfig.iCloudContainerIdentifier) {
+            _cachedContainerURL = containerURL
+            let tracksDir = containerURL.appendingPathComponent("Documents/Tracks", isDirectory: true)
+            try fm.createDirectory(at: tracksDir, withIntermediateDirectories: true)
+            DiagLog.log("[iCloud] Container found (sync fallback): \(tracksDir.path)")
+            return tracksDir
+        }
+
+        // Fallback: iCloud unavailable
+        DiagLog.log("[iCloud] Container unavailable — falling back to local storage")
         let docs = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let tracksDir = docs.appendingPathComponent("Tracks", isDirectory: true)
         try fm.createDirectory(at: tracksDir, withIntermediateDirectories: true)
@@ -188,6 +210,8 @@ final class GPXWriter: @unchecked Sendable {
     }()
 }
 
+// MARK: - GPX formatting
+
 private extension GPXWriter {
     static func gpxHeader() -> String {
         return """
@@ -210,16 +234,13 @@ private extension GPXWriter {
         xml += "    <ele>\(String(format: "%.1f", ele))</ele>\n"
         xml += "    <time>\(time)</time>\n"
 
-        // Horizontal accuracy
         if location.horizontalAccuracy >= 0 {
             xml += "    <hdop>\(String(format: "%.1f", location.horizontalAccuracy))</hdop>\n"
         }
-        // Vertical accuracy
         if location.verticalAccuracy >= 0 {
             xml += "    <vdop>\(String(format: "%.1f", location.verticalAccuracy))</vdop>\n"
         }
 
-        // Extensions: speed, course, accuracies, heading, ellipsoidalAltitude, source
         var extLines: [String] = []
         if location.speed >= 0 {
             extLines.append("        <gpxleecoder:speed>\(String(format: "%.2f", location.speed))</gpxleecoder:speed>")
@@ -233,13 +254,10 @@ private extension GPXWriter {
         if location.courseAccuracy >= 0 {
             extLines.append("        <gpxleecoder:courseAccuracy>\(String(format: "%.1f", location.courseAccuracy))</gpxleecoder:courseAccuracy>")
         }
-        // True heading from compass
         if let h = heading, h >= 0 {
             extLines.append("        <gpxleecoder:trueHeading>\(String(format: "%.1f", h))</gpxleecoder:trueHeading>")
         }
-        // Ellipsoidal altitude (WGS84)
         extLines.append("        <gpxleecoder:ellipsoidalAltitude>\(String(format: "%.1f", location.ellipsoidalAltitude))</gpxleecoder:ellipsoidalAltitude>")
-        // Location source info
         if let source = location.sourceInformation {
             let isSimulated = source.isSimulatedBySoftware
             let isProduced = source.isProducedByAccessory

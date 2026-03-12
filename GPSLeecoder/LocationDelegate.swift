@@ -6,8 +6,6 @@ final class LocationDelegate: NSObject, CLLocationManagerDelegate {
     var onLocations: (([CLLocation]) -> Void)?
     var onHeading: ((CLHeading) -> Void)?
     var onError: ((Error) -> Void)?
-    var onPause: (() -> Void)?
-    var onResume: (() -> Void)?
     var onAuthorizationChange: ((CLAuthorizationStatus) -> Void)?
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -22,12 +20,10 @@ final class LocationDelegate: NSObject, CLLocationManagerDelegate {
         onError?(error)
     }
 
+    /// iOS가 위치 업데이트를 일시정지하면 즉시 재시작 — 백그라운드 기록 유지
     func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
-        onPause?()
-    }
-
-    func locationManagerDidResumeLocationUpdates(_ manager: CLLocationManager) {
-        onResume?()
+        DiagLog.log("PAUSED by iOS — auto-resuming")
+        manager.startUpdatingLocation()
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {

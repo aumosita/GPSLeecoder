@@ -60,7 +60,7 @@ struct TrackingMapView: View {
                 Button {
                     showHistory = true
                 } label: {
-                    Label(String(localized: "button_history"), systemImage: "clock.arrow.circlepath")
+                    Label(String(localized: "button_history"), systemImage: "icloud.and.arrow.up")
                 }
 
                 Button {
@@ -137,11 +137,10 @@ struct TrackingMapView: View {
             Button {
                 let flush = min(max(flushIntervalMinutes, 1), 60)
                 let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
-                let recordClamped = max(1, record == 0 ? 30 : record)
+                let recordClamped = max(1, record == 0 ? AppConfig.defaultRecordIntervalSeconds : record)
                 let started = GPSLogger.shared.startLogging(
-                    updateInterval: flush,
-                    suggestedName: nil,
-                    recordIntervalSeconds: recordClamped
+                    flushInterval: flush,
+                    recordInterval: recordClamped
                 )
                 if !started {
                     showOnboarding = true
@@ -164,6 +163,9 @@ struct TrackingMapView: View {
 
 private struct CompassHeading: View {
     let heading: Double
+
+    /// Cumulative rotation angle that avoids the 359°→0° wrap-around jump.
+    @State private var smoothAngle: Double = 0
 
     var body: some View {
         VStack(spacing: 8) {
@@ -190,8 +192,8 @@ private struct CompassHeading: View {
                 // Compass needle: red tip always points north
                 if heading >= 0 {
                     CompassNeedle()
-                        .rotationEffect(.degrees(-heading))
-                        .animation(.easeInOut(duration: 0.3), value: heading)
+                        .rotationEffect(.degrees(smoothAngle))
+                        .animation(.easeInOut(duration: 0.3), value: smoothAngle)
                 } else {
                     Image(systemName: "location.slash")
                         .font(.system(size: 28))
@@ -203,6 +205,21 @@ private struct CompassHeading: View {
                 Text("\(Int(heading))\u{00B0}")
                     .font(.system(.title2, design: .rounded, weight: .medium))
                     .monospacedDigit()
+            }
+        }
+        .onChange(of: heading) { _, newHeading in
+            guard newHeading >= 0 else { return }
+            let target = -newHeading
+            // Compute shortest-path delta (range -180...180)
+            var delta = target - smoothAngle
+            delta = delta.truncatingRemainder(dividingBy: 360)
+            if delta > 180 { delta -= 360 }
+            if delta < -180 { delta += 360 }
+            smoothAngle += delta
+        }
+        .onAppear {
+            if heading >= 0 {
+                smoothAngle = -heading
             }
         }
     }

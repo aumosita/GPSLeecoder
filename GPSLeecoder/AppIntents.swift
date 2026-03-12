@@ -17,8 +17,8 @@ struct StartLoggingIntent: AppIntent {
             let flush = UserDefaults.standard.integer(forKey: "flushIntervalMinutes")
             let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
             let started = await GPSLogger.shared.startLogging(
-                updateInterval: max(1, flush == 0 ? AppConfig.defaultFlushIntervalMinutes : flush),
-                recordIntervalSeconds: max(1, record == 0 ? 20 : record)
+                flushInterval: max(1, flush == 0 ? AppConfig.defaultFlushIntervalMinutes : flush),
+                recordInterval: max(1, record == 0 ? AppConfig.defaultRecordIntervalSeconds : record)
             )
             return .result(
                 value: started

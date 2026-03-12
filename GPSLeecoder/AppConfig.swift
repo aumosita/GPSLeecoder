@@ -6,13 +6,11 @@ enum SaveMode: String, CaseIterable {
 }
 
 enum AppConfig {
-    // Replace this with your actual iCloud container ID after enabling iCloud capability
-    // in Signing & Capabilities. Typical format: "iCloud.<your.bundle.identifier>"
-    static let iCloudContainerIdentifier: String = "iCloud.com.leecoder.GPSLogger"
+    static let iCloudContainerIdentifier = "iCloud.com.aumosita.GPSLeecoder"
 
-    // Default flush interval (minutes) for writing GPX to iCloud
+    // Defaults
     static let defaultFlushIntervalMinutes: Int = 10
-
-    /// Threshold: record interval >= this value triggers intermittent GPS mode
-    static let intermittentGPSThreshold: Int = 5
+    static let defaultRecordIntervalSeconds: Int = 30
+    static let defaultDistanceFilterMeters: Int = 10
+    static let defaultAccuracyFilterMeters: Int = 100
 }
