@@ -14,6 +14,9 @@ final class GPXWriter: @unchecked Sendable {
 
     private static var _cachedContainerURL: URL?
 
+    /// iCloud container가 사용 가능한지 여부
+    static var isICloudAvailable: Bool { _cachedContainerURL != nil }
+
     /// 앱 시작 시 호출 — async/await로 백그라운드에서 iCloud container를 초기화한다.
     static func resolveICloudContainer() async -> URL? {
         if let cached = _cachedContainerURL { return cached }

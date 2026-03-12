@@ -13,9 +13,14 @@ struct TrackingMapView: View {
     @State private var showMap = false
     @State private var fileToShare: URL?
     @State private var showStopConfirmation = false
+    @State private var iCloudAvailable = true
 
     var body: some View {
         VStack(spacing: 0) {
+            if !iCloudAvailable {
+                iCloudBanner
+            }
+
             Spacer()
 
             // Heading compass
@@ -52,6 +57,18 @@ struct TrackingMapView: View {
                 showOnboarding = true
             }
             GPSLogger.shared.requestInitialLocation()
+            iCloudAvailable = GPXWriter.isICloudAvailable
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // iCloud가 아직 없으면 다시 시도
+            if !GPXWriter.isICloudAvailable {
+                Task {
+                    _ = await GPXWriter.resolveICloudContainer()
+                    await MainActor.run {
+                        iCloudAvailable = GPXWriter.isICloudAvailable
+                    }
+                }
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
@@ -118,6 +135,33 @@ struct TrackingMapView: View {
         }
     }
 
+    private var iCloudBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.icloud")
+                .font(.title3)
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("icloud_banner_title")
+                    .font(.subheadline.bold())
+                Text("icloud_banner_message")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(String(localized: "button_open_settings")) {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
     @ViewBuilder
     private var recordButton: some View {
         if state.isLogging {
@@ -135,7 +179,7 @@ struct TrackingMapView: View {
             }
         } else {
             Button {
-                let flush = min(max(flushIntervalMinutes, 1), 60)
+                let flush = min(max(flushIntervalMinutes, 0), 30)
                 let record = UserDefaults.standard.integer(forKey: "recordIntervalSeconds")
                 let recordClamped = max(1, record == 0 ? AppConfig.defaultRecordIntervalSeconds : record)
                 let started = GPSLogger.shared.startLogging(

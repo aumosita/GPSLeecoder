@@ -347,6 +347,62 @@
     "Clear log" : {
 
     },
+    "icloud_banner_message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable iCloud Drive for this app in Settings > Apple ID > iCloud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez iCloud Drive pour cette app dans Réglages > Identifiant Apple > iCloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 > Apple ID > iCloud でこのアプリのiCloud Driveを有効にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설정 > Apple ID > iCloud에서 이 앱의 iCloud Drive를 켜주세요."
+          }
+        }
+      }
+    },
+    "icloud_banner_title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Drive Unavailable"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Drive indisponible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Driveが利用できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Drive 사용 불가"
+          }
+        }
+      }
+    },
     "delete_confirm_cancel" : {
       "localizations" : {
         "en" : {
@@ -1772,6 +1828,7 @@
       }
     },
     "settings_sync_min_label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
