@@ -195,10 +195,12 @@ final class GPSLogger {
             // Load existing stats if resuming a daily file
             var existingPoints = 0
             var existingDistance: Double = 0
+            var existingCoords: [CLLocationCoordinate2D] = []
             if saveMode == .daily, let url = gpx.fileURL {
                 let stats = GPXWriter.statsFromFile(at: url)
                 existingPoints = stats.points
                 existingDistance = stats.distance
+                existingCoords = stats.coordinates
                 if let coord = stats.lastCoord {
                     lastLocation = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                 }
@@ -215,7 +217,7 @@ final class GPSLogger {
             skipLogCounter = 0
             isRecording = true
 
-            trackState.coordinates = []
+            trackState.coordinates = existingCoords
             trackState.pointCount = existingPoints
             trackState.totalDistance = existingDistance
             trackState.isLogging = true
