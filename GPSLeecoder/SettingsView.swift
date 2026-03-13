@@ -7,6 +7,12 @@ struct SettingsView: View {
     @AppStorage("distanceFilterMeters") private var distanceFilterMeters: Int = AppConfig.defaultDistanceFilterMeters
     @AppStorage("accuracyFilterMeters") private var accuracyFilterMeters: Int = AppConfig.defaultAccuracyFilterMeters
 
+    @AppStorage("hwDistanceFilter") private var hwDistanceFilter: Bool = AppConfig.defaultHwDistanceFilter
+    @AppStorage("activityTypeFitness") private var activityTypeFitness: Bool = AppConfig.defaultActivityTypeFitness
+    @AppStorage("dutyCycling") private var dutyCycling: Bool = AppConfig.defaultDutyCycling
+    @AppStorage("stationaryPowerSave") private var stationaryPowerSave: Bool = AppConfig.defaultStationaryPowerSave
+    @AppStorage("maxPerformance") private var maxPerformance: Bool = AppConfig.defaultMaxPerformance
+
     var body: some View {
         Form {
             Section("settings_section_save_mode") {
@@ -115,6 +121,62 @@ struct SettingsView: View {
                 Text("settings_section_filters")
             } footer: {
                 Text("settings_filters_note")
+            }
+
+            Section {
+                Toggle(isOn: $maxPerformance) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings_power_max_performance")
+                        Text("settings_power_max_performance_desc")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.orange)
+
+                Toggle(isOn: $hwDistanceFilter) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings_power_hw_distance")
+                        Text("settings_power_hw_distance_desc")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(maxPerformance)
+
+                Toggle(isOn: $activityTypeFitness) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings_power_activity_fitness")
+                        Text("settings_power_activity_fitness_desc")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(maxPerformance)
+
+                Toggle(isOn: $dutyCycling) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings_power_duty_cycling")
+                        Text("settings_power_duty_cycling_desc")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(maxPerformance)
+
+                Toggle(isOn: $stationaryPowerSave) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings_power_stationary")
+                        Text("settings_power_stationary_desc")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(maxPerformance)
+            } header: {
+                Text("settings_section_gps_power")
+            } footer: {
+                Text("settings_power_footer")
             }
 
             Section("Diagnostics") {

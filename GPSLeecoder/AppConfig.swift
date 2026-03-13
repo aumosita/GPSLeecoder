@@ -13,4 +13,11 @@ enum AppConfig {
     static let defaultRecordIntervalSeconds: Int = 30
     static let defaultDistanceFilterMeters: Int = 10
     static let defaultAccuracyFilterMeters: Int = 100
+
+    // Power saving defaults
+    static let defaultHwDistanceFilter: Bool = true
+    static let defaultActivityTypeFitness: Bool = true
+    static let defaultDutyCycling: Bool = false
+    static let defaultStationaryPowerSave: Bool = true
+    static let defaultMaxPerformance: Bool = false
 }

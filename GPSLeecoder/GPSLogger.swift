@@ -4,13 +4,15 @@ import Combine
 import UIKit
 
 final class TrackState: ObservableObject {
-    @Published var coordinates: [CLLocationCoordinate2D] = []
+    var coordinates: [CLLocationCoordinate2D] = []   // Not @Published — avoids costly SwiftUI diff on every append
+    @Published var pointCount: Int = 0               // True recorded count (never decreases)
     @Published var isLogging: Bool = false
     @Published var currentFileURL: URL? = nil
-    @Published var currentSpeed: Double = 0        // m/s, negative if invalid
-    @Published var currentAltitude: Double = 0      // meters
-    @Published var totalDistance: Double = 0         // meters
-    @Published var currentHeading: Double = -1       // degrees, -1 = invalid
+    @Published var currentSpeed: Double = 0          // m/s, negative if invalid
+    @Published var currentAltitude: Double = 0       // meters
+    @Published var totalDistance: Double = 0          // meters
+    @Published var currentAccuracy: Double = -1        // horizontal accuracy in meters, -1 = invalid
+    @Published var currentHeading: Double = -1        // degrees, -1 = invalid
     @Published var currentLocation: CLLocationCoordinate2D? = nil
 }
 
@@ -30,6 +32,7 @@ final class GPSLogger {
     private var lastLocation: CLLocation?
     private var totalDistance: Double = 0
     private var lastTrueHeading: Double = -1
+    private var lastHeadingTime: Date?
 
     private var saveMode: SaveMode = .daily
     private var flushIntervalSeconds: TimeInterval = TimeInterval(AppConfig.defaultFlushIntervalMinutes * 60)
@@ -38,6 +41,15 @@ final class GPSLogger {
     private var accuracyFilterMeters: Double = Double(AppConfig.defaultAccuracyFilterMeters)
 
     private var skipLogCounter: Int = 0
+
+    // Power saving options
+    private var hwDistanceFilter: Bool = AppConfig.defaultHwDistanceFilter
+    private var activityTypeFitness: Bool = AppConfig.defaultActivityTypeFitness
+    private var dutyCycling: Bool = AppConfig.defaultDutyCycling
+    private var stationaryPowerSave: Bool = AppConfig.defaultStationaryPowerSave
+    private var maxPerformance: Bool = AppConfig.defaultMaxPerformance
+    private var dutyCycleTimer: Timer?
+    private var isStationaryLowPower: Bool = false
 
     // Persistence keys for relaunch recovery
     private static let kWasLogging = "GPSLogger.wasLogging"
@@ -59,8 +71,6 @@ final class GPSLogger {
         locationManager.headingFilter = kCLHeadingFilterNone
         locationManager.activityType = .other
 
-        locationManager.startUpdatingHeading()
-
         delegate.onLocations = { [weak self] locations in
             MainActor.assumeIsolated { self?.handleLocations(locations) }
         }
@@ -74,14 +84,16 @@ final class GPSLogger {
             MainActor.assumeIsolated { self?.handleAuthorizationChange(status) }
         }
 
-        // 백그라운드 진입 시 flush
+        // 백그라운드 진입 시 heading 중지 + flush
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.isRecording else { return }
-                DiagLog.log("BACKGROUND — points=\(self.trackState.coordinates.count)")
+                guard let self else { return }
+                self.locationManager.stopUpdatingHeading()
+                guard self.isRecording else { return }
+                DiagLog.log("BACKGROUND — points=\(self.trackState.pointCount)")
                 do { try self.gpx.flush() } catch {
                     DiagLog.log("Background flush error: \(error)")
                 }
@@ -93,8 +105,11 @@ final class GPSLogger {
             object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.isRecording else { return }
-                DiagLog.log("FOREGROUND — points=\(self.trackState.coordinates.count)")
+                guard let self else { return }
+                self.locationManager.startUpdatingHeading()
+                self.lastHeadingTime = nil
+                guard self.isRecording else { return }
+                DiagLog.log("FOREGROUND — points=\(self.trackState.pointCount)")
             }
         }
     }
@@ -120,6 +135,16 @@ final class GPSLogger {
         locationManager.requestLocation()
     }
 
+    func startHeadingUpdates() {
+        locationManager.startUpdatingHeading()
+        lastHeadingTime = nil
+    }
+
+    func stopHeadingUpdates() {
+        locationManager.stopUpdatingHeading()
+        lastHeadingTime = nil
+    }
+
     @discardableResult
     func startLogging(flushInterval: Int? = nil, recordInterval: Int? = nil) -> Bool {
         let status = locationManager.authorizationStatus
@@ -129,7 +154,7 @@ final class GPSLogger {
         }
 
         // Apply settings
-        if let f = flushInterval { flushIntervalSeconds = TimeInterval(max(1, f)) * 60 }
+        if let f = flushInterval { flushIntervalSeconds = TimeInterval(max(0, f)) * 60 }
         if let r = recordInterval { recordIntervalSeconds = max(1, r) }
 
         let modeRaw = UserDefaults.standard.string(forKey: "saveMode") ?? SaveMode.daily.rawValue
@@ -143,6 +168,22 @@ final class GPSLogger {
                      ?? AppConfig.defaultAccuracyFilterMeters
         accuracyFilterMeters = Double(accRaw)
 
+        // Power saving options
+        let ud = UserDefaults.standard
+        hwDistanceFilter = ud.object(forKey: "hwDistanceFilter") as? Bool ?? AppConfig.defaultHwDistanceFilter
+        activityTypeFitness = ud.object(forKey: "activityTypeFitness") as? Bool ?? AppConfig.defaultActivityTypeFitness
+        dutyCycling = ud.object(forKey: "dutyCycling") as? Bool ?? AppConfig.defaultDutyCycling
+        stationaryPowerSave = ud.object(forKey: "stationaryPowerSave") as? Bool ?? AppConfig.defaultStationaryPowerSave
+        maxPerformance = ud.object(forKey: "maxPerformance") as? Bool ?? AppConfig.defaultMaxPerformance
+
+        // Max performance overrides all power saving
+        if maxPerformance {
+            hwDistanceFilter = false
+            activityTypeFitness = false
+            dutyCycling = false
+            stationaryPowerSave = false
+        }
+
         do {
             if saveMode == .daily {
                 try gpx.startNewFileForDate(Date())
@@ -151,26 +192,62 @@ final class GPSLogger {
             }
             currentFileURL = gpx.fileURL
 
+            // Load existing stats if resuming a daily file
+            var existingPoints = 0
+            var existingDistance: Double = 0
+            if saveMode == .daily, let url = gpx.fileURL {
+                let stats = GPXWriter.statsFromFile(at: url)
+                existingPoints = stats.points
+                existingDistance = stats.distance
+                if let coord = stats.lastCoord {
+                    lastLocation = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                }
+                if existingPoints > 0 {
+                    DiagLog.log("RESUME daily — existing \(existingPoints) pts, \(String(format: "%.0f", existingDistance))m")
+                }
+            }
+
             // Reset state
             lastAcceptedTime = nil
             lastFlushTime = Date()
-            lastLocation = nil
-            totalDistance = 0
+            if existingPoints == 0 { lastLocation = nil }
+            totalDistance = existingDistance
             skipLogCounter = 0
             isRecording = true
 
             trackState.coordinates = []
+            trackState.pointCount = existingPoints
+            trackState.totalDistance = existingDistance
             trackState.isLogging = true
             trackState.currentFileURL = currentFileURL
 
+            // Apply power settings to CLLocationManager
+            locationManager.activityType = activityTypeFitness ? .fitness : .other
+            locationManager.distanceFilter = hwDistanceFilter ? distanceFilterMeters : kCLDistanceFilterNone
+            locationManager.desiredAccuracy = maxPerformance ? kCLLocationAccuracyBestForNavigation : kCLLocationAccuracyBest
+            isStationaryLowPower = false
+
             locationManager.allowsBackgroundLocationUpdates = true
             locationManager.showsBackgroundLocationIndicator = true
-            locationManager.startUpdatingLocation()
-            locationManager.startMonitoringSignificantLocationChanges()
+
+            if dutyCycling && recordIntervalSeconds >= 5 {
+                // Duty cycling: periodic requestLocation() instead of continuous
+                locationManager.startMonitoringSignificantLocationChanges()
+                scheduleDutyCycleTimer()
+            } else {
+                locationManager.startUpdatingLocation()
+                locationManager.startMonitoringSignificantLocationChanges()
+            }
 
             persistLoggingState()
 
-            DiagLog.log("START — mode=\(saveMode) record=\(recordIntervalSeconds)s flush=\(Int(flushIntervalSeconds/60))m dist=\(distanceFilterMeters)m acc=\(accuracyFilterMeters)m file=\(gpx.fileURL?.lastPathComponent ?? "nil")")
+            var powerFlags: [String] = []
+            if maxPerformance { powerFlags.append("MAX") }
+            if hwDistanceFilter { powerFlags.append("hwDist") }
+            if activityTypeFitness { powerFlags.append("fitness") }
+            if dutyCycling { powerFlags.append("duty") }
+            if stationaryPowerSave { powerFlags.append("statSave") }
+            DiagLog.log("START — mode=\(saveMode) record=\(recordIntervalSeconds)s flush=\(Int(flushIntervalSeconds/60))m dist=\(distanceFilterMeters)m acc=\(accuracyFilterMeters)m power=[\(powerFlags.joined(separator: ","))] file=\(gpx.fileURL?.lastPathComponent ?? "nil")")
             return true
         } catch {
             DiagLog.log("Failed to start logging: \(error)")
@@ -180,11 +257,17 @@ final class GPSLogger {
 
     func stopLogging() {
         guard isRecording else { return }
-        DiagLog.log("STOP — points=\(trackState.coordinates.count) dist=\(String(format: "%.0f", totalDistance))m")
+        DiagLog.log("STOP — points=\(trackState.pointCount) dist=\(String(format: "%.0f", totalDistance))m")
 
         isRecording = false
+        dutyCycleTimer?.invalidate()
+        dutyCycleTimer = nil
         locationManager.stopUpdatingLocation()
         locationManager.stopMonitoringSignificantLocationChanges()
+        // Restore defaults
+        locationManager.distanceFilter = kCLDistanceFilterNone
+        locationManager.activityType = .other
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
         clearLoggingState()
 
         do { try gpx.close() } catch {
@@ -212,6 +295,11 @@ final class GPSLogger {
     private func handleHeading(_ heading: CLHeading) {
         let h = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         lastTrueHeading = h
+
+        // Throttle UI updates to ~10 Hz
+        let now = Date()
+        if let last = lastHeadingTime, now.timeIntervalSince(last) < 0.1 { return }
+        lastHeadingTime = now
         trackState.currentHeading = h
     }
 
@@ -220,6 +308,7 @@ final class GPSLogger {
             // 기록 중이 아니어도 현재 위치는 업데이트 (초기 위치 표시용)
             if !isRecording, let loc = locations.last {
                 trackState.currentLocation = loc.coordinate
+                trackState.currentAccuracy = loc.horizontalAccuracy
             }
             return
         }
@@ -293,7 +382,7 @@ final class GPSLogger {
                 do {
                     try gpx.flush()
                     lastFlushTime = Date()
-                    DiagLog.log("FLUSH — points=\(trackState.coordinates.count + newCoords.count)")
+                    DiagLog.log("FLUSH — points=\(trackState.pointCount + newCoords.count)")
                 } catch {
                     DiagLog.log("Flush error: \(error)")
                 }
@@ -311,15 +400,15 @@ final class GPSLogger {
 
         guard !newCoords.isEmpty else { return }
 
+        trackState.coordinates.append(contentsOf: newCoords)
+        trackState.pointCount += newCoords.count
+
         // Log every 10th point
-        if trackState.coordinates.count % 10 < newCoords.count || trackState.coordinates.isEmpty {
-            DiagLog.log("POINT +\(newCoords.count) total=\(trackState.coordinates.count + newCoords.count)")
+        if trackState.pointCount % 10 < newCoords.count || trackState.pointCount == newCoords.count {
+            DiagLog.log("POINT +\(newCoords.count) total=\(trackState.pointCount)")
         }
 
-        let lastCoord = newCoords.last
-        trackState.coordinates.append(contentsOf: newCoords)
-
-        // Memory protection: thin coordinates when exceeding limit
+        // Memory protection: thin coordinates for map display
         let maxCoordinates = 5000
         if trackState.coordinates.count > maxCoordinates {
             let thinned = stride(from: 0, to: trackState.coordinates.count, by: 2)
@@ -327,14 +416,46 @@ final class GPSLogger {
             trackState.coordinates = thinned
         }
 
+        let lastCoord = newCoords.last
+
         if let loc = ordered.last {
             trackState.currentSpeed = loc.speed
             trackState.currentAltitude = loc.altitude
+            trackState.currentAccuracy = loc.horizontalAccuracy
+
+            // Stationary power save: lower accuracy when speed ≈ 0
+            if stationaryPowerSave && !dutyCycling {
+                let isStationary = loc.speed < 0.3
+                if isStationary && !isStationaryLowPower {
+                    locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+                    isStationaryLowPower = true
+                    DiagLog.log("POWER — stationary → nearestTenMeters")
+                } else if !isStationary && isStationaryLowPower {
+                    locationManager.desiredAccuracy = kCLLocationAccuracyBest
+                    isStationaryLowPower = false
+                    DiagLog.log("POWER — moving → best accuracy")
+                }
+            }
         }
         trackState.totalDistance = totalDistance
         if let coord = lastCoord {
             trackState.currentLocation = coord
         }
+    }
+
+    // MARK: - Duty cycling
+
+    private func scheduleDutyCycleTimer() {
+        dutyCycleTimer?.invalidate()
+        let interval = TimeInterval(max(5, recordIntervalSeconds))
+        dutyCycleTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isRecording else { return }
+                self.locationManager.requestLocation()
+            }
+        }
+        // Fire immediately for first fix
+        locationManager.requestLocation()
     }
 
     // MARK: - Error handling

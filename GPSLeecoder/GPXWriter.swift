@@ -192,6 +192,46 @@ final class GPXWriter: @unchecked Sendable {
         return tracksDir
     }
 
+    // MARK: - Existing file stats
+
+    /// Parse point count and total distance from an existing GPX file.
+    /// Returns (pointCount, totalDistanceMeters, lastCoordinate).
+    static func statsFromFile(at url: URL) -> (points: Int, distance: Double, lastCoord: CLLocationCoordinate2D?) {
+        guard let data = try? Data(contentsOf: url),
+              let content = String(data: data, encoding: .utf8) else {
+            return (0, 0, nil)
+        }
+
+        // Extract all lat/lon pairs from <trkpt lat="..." lon="...">
+        var coords: [(lat: Double, lon: Double)] = []
+        let pattern = #"<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return (0, 0, nil)
+        }
+        let range = NSRange(content.startIndex..., in: content)
+        for match in regex.matches(in: content, range: range) {
+            if let latRange = Range(match.range(at: 1), in: content),
+               let lonRange = Range(match.range(at: 2), in: content),
+               let lat = Double(content[latRange]),
+               let lon = Double(content[lonRange]) {
+                coords.append((lat, lon))
+            }
+        }
+
+        guard !coords.isEmpty else { return (0, 0, nil) }
+
+        // Compute total distance
+        var totalDist: Double = 0
+        for i in 1..<coords.count {
+            let prev = CLLocation(latitude: coords[i - 1].lat, longitude: coords[i - 1].lon)
+            let curr = CLLocation(latitude: coords[i].lat, longitude: coords[i].lon)
+            totalDist += curr.distance(from: prev)
+        }
+
+        let last = coords.last!
+        return (coords.count, totalDist, CLLocationCoordinate2D(latitude: last.lat, longitude: last.lon))
+    }
+
     // MARK: - Static cached formatters
 
     private static let sessionDateFormatter: DateFormatter = {

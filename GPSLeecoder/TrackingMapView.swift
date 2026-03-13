@@ -13,33 +13,37 @@ struct TrackingMapView: View {
     @State private var showMap = false
     @State private var fileToShare: URL?
     @State private var showStopConfirmation = false
-    @State private var iCloudAvailable = true
 
     var body: some View {
         VStack(spacing: 0) {
-            if !iCloudAvailable {
-                iCloudBanner
-            }
-
             Spacer()
 
             // Heading compass
             CompassHeading(heading: state.currentHeading)
                 .padding(.bottom, 24)
 
+            // GPS accuracy badge
+            if state.currentAccuracy >= 0 {
+                Text("± \(String(format: "%.0f", state.currentAccuracy)) m")
+                    .font(.system(.caption, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(state.currentAccuracy <= 5 ? .green : state.currentAccuracy <= 15 ? .primary : .orange)
+                    .padding(.bottom, 8)
+            }
+
             // Live stats grid
             if state.isLogging {
                 StatsGrid(speed: state.currentSpeed,
                           altitude: state.currentAltitude,
                           distance: state.totalDistance,
-                          pointCount: state.coordinates.count)
+                          pointCount: state.pointCount)
                     .padding(.horizontal, 24)
             } else if state.currentFileURL != nil {
                 // 마지막 세션 요약
                 StatsGrid(speed: 0,
                           altitude: state.currentAltitude,
                           distance: state.totalDistance,
-                          pointCount: state.coordinates.count)
+                          pointCount: state.pointCount)
                     .padding(.horizontal, 24)
                     .opacity(0.5)
             }
@@ -57,18 +61,7 @@ struct TrackingMapView: View {
                 showOnboarding = true
             }
             GPSLogger.shared.requestInitialLocation()
-            iCloudAvailable = GPXWriter.isICloudAvailable
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            // iCloud가 아직 없으면 다시 시도
-            if !GPXWriter.isICloudAvailable {
-                Task {
-                    _ = await GPXWriter.resolveICloudContainer()
-                    await MainActor.run {
-                        iCloudAvailable = GPXWriter.isICloudAvailable
-                    }
-                }
-            }
+            GPSLogger.shared.startHeadingUpdates()
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
@@ -133,33 +126,6 @@ struct TrackingMapView: View {
                 GPSLogger.shared.stopLogging()
             }
         }
-    }
-
-    private var iCloudBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.icloud")
-                .font(.title3)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("icloud_banner_title")
-                    .font(.subheadline.bold())
-                Text("icloud_banner_message")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button(String(localized: "button_open_settings")) {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            .font(.caption)
-            .buttonStyle(.bordered)
-        }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
     }
 
     @ViewBuilder
