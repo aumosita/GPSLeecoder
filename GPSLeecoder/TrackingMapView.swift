@@ -28,6 +28,12 @@ struct TrackingMapView: View {
                     .font(.system(.caption, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(state.currentAccuracy <= 5 ? .green : state.currentAccuracy <= 15 ? .primary : .orange)
+                    .padding(.bottom, 4)
+            }
+
+            // Lat/Lon display with copy button
+            if let loc = state.currentLocation {
+                CoordinateLabel(latitude: loc.latitude, longitude: loc.longitude)
                     .padding(.bottom, 8)
             }
 
@@ -169,6 +175,40 @@ struct TrackingMapView: View {
     }
 }
 
+// MARK: - Coordinate label with copy
+
+private struct CoordinateLabel: View {
+    let latitude: Double
+    let longitude: Double
+    @State private var copied = false
+
+    private var coordText: String {
+        String(format: "%.6f, %.6f", latitude, longitude)
+    }
+
+    var body: some View {
+        Button {
+            UIPasteboard.general.string = coordText
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                copied = false
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(coordText)
+                    .font(.system(.caption, design: .monospaced))
+                    .monospacedDigit()
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 10))
+                    .foregroundStyle(copied ? .green : .secondary)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: copied)
+    }
+}
+
 // MARK: - Compass heading display
 
 private struct CompassHeading: View {
@@ -193,11 +233,11 @@ private struct CompassHeading: View {
                         .rotationEffect(.degrees(Double(deg)))
                 }
 
-                // N label fixed at top
-                Text("N")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.secondary.opacity(0.7))
-                    .offset(y: -42)
+                // North indicator triangle fixed at top
+                Image(systemName: "triangle.fill")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.red.opacity(0.7))
+                    .offset(y: -43)
 
                 // Compass needle: red tip always points north
                 if heading >= 0 {
